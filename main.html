@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório – Almoxarifado + Datas</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+body { font-family: 'Inter', sans-serif; background: #f4f6f8; margin:0; padding:25px; font-size:14px; color:#333; transition: all 0.3s; }
+h1 { text-align:center; margin-bottom:20px; font-size:26px; font-weight:600; color:#1a237e; }
+.container { max-width:1080px; margin:auto; background:#fff; padding:25px; border-radius:16px; box-shadow:0 6px 20px rgba(0,0,0,0.1); transition: all 0.3s; }
+.filtros-botoes { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+.filtros-botoes input, .filtros-botoes select, .filtros-botoes button { font-size:13px; padding:8px 12px; flex:1; min-width:140px; border-radius:8px; border:1px solid #cfd8dc; transition: all 0.2s; outline:none; }
+.filtros-botoes input:focus, .filtros-botoes select:focus { border-color:#1976d2; box-shadow:0 0 5px rgba(25,118,210,0.3); }
+button { background:#1976d2; color:white; cursor:pointer; border:none; border-radius:8px; font-weight:500; transition: all 0.2s; }
+button:hover { background:#1257a5; transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+details { margin-top:12px; background:#e8f0fe; border:1px solid #c5d3f0; border-radius:10px; padding:12px; transition: all 0.2s; }
+details summary { cursor:pointer; padding:8px; font-size:16px; font-weight:600; color:#0d47a1; }
+details[open] { background:#dbe6fc; }
+.tabela-scroll { max-height:360px; overflow-y:auto; overflow-x:auto; margin-top:12px; border:1px solid #c5d2f0; border-radius:10px; background:white; padding:8px; }
+table { width:100%; border-collapse:collapse; font-size:13px; min-width:900px; transition: all 0.3s; }
+th, td { padding:8px 10px; border:1px solid #ccc; text-align:center; white-space:nowrap; }
+th { background:#1976d2; color:white; font-weight:600; cursor:pointer; }
+tr:nth-child(even) { background:#f1f5f9; }
+tr:hover { background:#e3f2fd; }
+.summary-resumo { margin-bottom:8px; font-size:13px; font-weight:600; color:#0d47a1; }
+
+@media print {
+    body { background:white; }
+    .container * { display:none; }
+    .print-table { display:block; width:100%; }
+    table { font-size:10px; border:1px solid #000; }
+    th, td { border:1px solid #000; padding:3px; }
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+    <h1>📌 Relatório por Almoxarifado (+6 dias)</h1>
+
+    <div class="filtros-botoes">
+        <input type="file" id="fileInput" accept=".xlsx">
+        <select id="filtroAlmox"><option value="">Filtrar por Almoxarifado</option></select>
+        <select id="filtroRange"><option value="">Filtrar por Range de Dias</option></select>
+        <button onclick="baixarExcel()">💾 Excel</button>
+        <button onclick="gerarRelatorioImpressao()">🖨️ Imprimir</button>
+        <button onclick="toggleDetalhes()" id="btnToggle">⬆️ Expandir/Recolher Todos</button>
+    </div>
+
+    <div id="resultado"></div>
+</div>
+
+
+<script>
+let dfGlobal = [];
+let ordenacao = { coluna: null, asc: true };
+
+const COLUNAS_DATA = [
+    "Data de Check in","Data de Entrada da Nota","Data Inventario",
+    "Ultimo Inventario Filial","Data de Criação da Coleta",
+    "Data Programacao","Dt Final Entrega","Dt Limite Embarque"
+];
+
+const COLUNAS_EXCEL = [
+    "Data de Check in","Data de Entrada da Nota","Nota","Numero OEF","Range de Dias",
+    "Fornecedor","Almoxarifado","CTE","ONU","End. WMS","Peso","Volumes",
+    "Data Inventario","Ultimo Inventario Filial","Status no Inventario",
+    "Data de Criação da Coleta","Data Programacao","Dt Final Entrega","Dt Limite Embarque"
+];
+
+function formatDateBR(date){ 
+    if(!date) return "";
+    const d = String(date.getDate()).padStart(2,"0");
+    const m = String(date.getMonth()+1).padStart(2,"0");
+    return `${d}/${m}/${date.getFullYear()}`;
+}
+
+function parseDateLocal(val){
+    if(val instanceof Date) return new Date(val.getFullYear(), val.getMonth(), val.getDate());
+    if(!isNaN(val)){
+        const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    if(typeof val === "string" && val.includes("/")){
+        const [d,m,y] = val.split("/");
+        return new Date(y, m-1, d);
+    }
+    return null;
+}
+
+document.getElementById("fileInput").addEventListener("change", async function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { cellDates:true, raw:true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+    let df = XLSX.utils.sheet_to_json(sheet, { raw:true, dateNF:"dd/mm/yyyy" });
+    df.forEach(linha => {
+        COLUNAS_DATA.forEach(col => { linha[col] = parseDateLocal(linha[col]); });
+    });
+
+    dfGlobal = df;
+    renderTabela();
+});
+
+
+// ------------------- FILTROS -------------------
+function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
+    const filtroAlmox = document.getElementById("filtroAlmox");
+    const filtroRange = document.getElementById("filtroRange");
+
+    filtroAlmox.innerHTML = `<option value="">Filtrar por Almoxarifado</option>`;
+    filtroRange.innerHTML = `<option value="">Filtrar por Range de Dias</option>`;
+
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const limite = new Date(hoje); limite.setDate(hoje.getDate() - 6);
+
+    const dfFiltrado = df.filter(l => {
+        if(filtroAlmoxSelecionado && l["Almoxarifado"] !== filtroAlmoxSelecionado) return false;
+        if(filtroRangeSelecionado && l["Range de Dias"] !== filtroRangeSelecionado) return false;
+
+        const datas = COLUNAS_DATA.map(c => l[c]).filter(d => d instanceof Date);
+        if(datas.length === 0) return false;
+
+        return new Date(Math.max(...datas)) <= limite;
+    });
+
+    const almoxSet = new Set(dfFiltrado.map(l => l["Almoxarifado"]).filter(a => a));
+    const rangeSet = new Set(dfFiltrado.map(l => l["Range de Dias"]).filter(r => r));
+
+    [...almoxSet].sort().forEach(a => {
+        filtroAlmox.innerHTML += `<option value="${a}" ${filtroAlmoxSelecionado===a?'selected':''}>${a}</option>`;
+    });
+
+    [...rangeSet].sort().forEach(r => {
+        filtroRange.innerHTML += `<option value="${r}" ${filtroRangeSelecionado===r?'selected':''}>${r}</option>`;
+    });
+
+    filtroAlmox.onchange = renderTabela;
+    filtroRange.onchange = renderTabela;
+}
+
+
+// ------------------- ORDENAÇÃO -------------------
+function ordenarArray(arr, coluna, asc = true){
+    return arr.sort((a,b)=>{
+        let A = a[coluna] ?? "";
+        let B = b[coluna] ?? "";
+
+        if(A instanceof Date && B instanceof Date) return asc ? A-B : B-A;
+
+        const nA = parseFloat(A);
+        const nB = parseFloat(B);
+        if(!isNaN(nA) && !isNaN(nB)) return asc ? nA-nB : nB-nA;
+
+        A = String(A).toLowerCase();
+        B = String(B).toLowerCase();
+        return asc ? A.localeCompare(B) : B.localeCompare(A);
+    });
+}
+
+
+// ------------------- RENDER TABELA -------------------
+function renderTabela(){
+    const filtroAlmox = document.getElementById("filtroAlmox").value;
+    const filtroRange = document.getElementById("filtroRange").value;
+
+    preencherFiltros(dfGlobal, filtroAlmox, filtroRange);
+
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const limite = new Date(hoje); limite.setDate(hoje.getDate() - 6);
+
+    const dfFiltrado = dfGlobal.filter(l => {
+        if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox) return false;
+        if(filtroRange && l["Range de Dias"] !== filtroRange) return false;
+
+        const datas = COLUNAS_DATA.map(c => l[c]).filter(d => d instanceof Date);
+        if(datas.length === 0) return false;
+
+        return new Date(Math.max(...datas)) <= limite;
+    });
+
+    const todasColunas = Array.from(new Set(dfGlobal.flatMap(obj => Object.keys(obj))));
+    const colunasOrdenadas = [
+        "Almoxarifado","Range de Dias","Nota","Data de Entrada da Nota","Data de Check in",
+        ...todasColunas.filter(c => ![
+            "Almoxarifado","Range de Dias","Nota","Data de Entrada da Nota","Data de Check in"
+        ].includes(c))
+    ];
+
+    const grupos = {};
+    dfFiltrado.forEach(l => {
+        const key = l["Almoxarifado"] || "Sem Almoxarifado";
+        if(!grupos[key]) grupos[key] = [];
+        grupos[key].push(l);
+    });
+
+    let html = "";
+    for(const almox in grupos){
+        let grupo = [...grupos[almox]];
+        if(ordenacao.coluna) grupo = ordenarArray(grupo, ordenacao.coluna, ordenacao.asc);
+
+        const notas = grupo.length;
+        const totalPeso = grupo.reduce((s,l)=>s+(parseFloat(l["Peso"])||0), 0);
+        const totalVolumes = grupo.reduce((s,l)=>s+(parseFloat(l["Volumes"])||0), 0);
+
+        html += `<details><summary>📦 ${almox} — ${notas} notas</summary>`;
+        html += `<div class="summary-resumo">Resumo: Total Notas: ${notas} | Peso: ${totalPeso} | Volumes: ${totalVolumes}</div>`;
+        html += `<div class="tabela-scroll"><table><tr>`;
+
+        colunasOrdenadas.forEach(c => {
+            html += `<th onclick="clicarCabecalho('${c}')">${c}${ordenacao.coluna===c ? (ordenacao.asc?' 🔼':' 🔽') : ''}</th>`;
+        });
+
+        html += `</tr>`;
+
+        grupo.forEach(l => {
+            html += "<tr>" + colunasOrdenadas.map(c=>{
+                const val = l[c];
+                return COLUNAS_DATA.includes(c)
+                    ? `<td>${formatDateBR(val)}</td>`
+                    : `<td>${val ?? ""}</td>`;
+            }).join("") + "</tr>";
+        });
+
+        html += `</table></div></details><br>`;
+    }
+
+    document.getElementById("resultado").innerHTML = html;
+    atualizarBotaoToggle();
+}
+
+
+// ------------------- ORDENAÇÃO CABEÇALHO -------------------
+function clicarCabecalho(coluna){
+    if(ordenacao.coluna === coluna) ordenacao.asc = !ordenacao.asc;
+    else { ordenacao.coluna = coluna; ordenacao.asc = true; }
+    renderTabela();
+}
+
+
+// ------------------- ABRIR / FECHAR TODOS -------------------
+function toggleDetalhes(){
+    const details = document.querySelectorAll("details");
+    const abrir = Array.from(details).some(d => !d.open);
+    details.forEach(d => d.open = abrir);
+    atualizarBotaoToggle();
+}
+
+function atualizarBotaoToggle(){
+    const all = document.querySelectorAll("details");
+    const btn = document.getElementById("btnToggle");
+    const todosAbertos = Array.from(all).every(d => d.open);
+    btn.innerText = todosAbertos ? "⬇️ Recolher Todos" : "⬆️ Expandir Todos";
+}
+
+
+// ------------------- EXPORTAR EXCEL -------------------
+function baixarExcel(){
+    const data = [];
+
+    document.querySelectorAll("details").forEach(detail => {
+        if(detail.open){
+            const table = detail.querySelector("table");
+            const rows = Array.from(table.querySelectorAll("tr")).slice(1);
+
+            rows.forEach(tr => {
+                const rowData = Array.from(tr.querySelectorAll("td")).map(td => td.innerText);
+                const obj = {};
+
+                COLUNAS_EXCEL.forEach(col => {
+                    const index = Array.from(table.querySelectorAll("th"))
+                        .findIndex(th => th.innerText === col);
+                    obj[col] = index >= 0 ? rowData[index] : "";
+                });
+
+                data.push(obj);
+            });
+        }
+    });
+
+    if(data.length === 0){ alert("Nenhum relatório aberto para exportar!"); return; }
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Relatorio");
+    XLSX.writeFile(wb, "relatorio_aberto.xlsx");
+}
+
+
+// ------------------- IMPRESSÃO -------------------
+function gerarRelatorioImpressao(){
+    const grupos = {};
+
+    document.querySelectorAll("details").forEach(detail => {
+        if(detail.open){
+            const table = detail.querySelector("table");
+            const almox = detail.querySelector("summary").innerText.split(' — ')[0].replace("📦 ","");
+
+            if(!grupos[almox]) grupos[almox] = [];
+
+            const rows = Array.from(table.querySelectorAll("tr")).slice(1);
+
+            rows.forEach(tr => {
+                const rowData = Array.from(tr.querySelectorAll("td")).map(td => td.innerText);
+                const obj = {};
+
+                COLUNAS_EXCEL.forEach(col => {
+                    const idx = Array.from(table.querySelectorAll("th"))
+                        .findIndex(th => th.innerText === col);
+                    obj[col] = idx >= 0 ? rowData[idx] : "";
+                });
+
+                grupos[almox].push(obj);
+            });
+        }
+    });
+
+    if(Object.keys(grupos).length === 0){
+        alert("Nenhum relatório aberto para imprimir!");
+        return;
+    }
+
+    let htmlPrint = `<html><head><title>Relatório para Impressão</title><style>
+        table { width:100%; border-collapse:collapse; font-size:10px; margin-bottom:25px; }
+        th, td { border:1px solid #000; padding:3px; text-align:center; }
+        th { background:#1976d2; color:white; font-weight:600; }
+        h3 { margin-top:15px; margin-bottom:5px; font-size:12px; }
+        h2 { font-size:14px; text-align:center; margin-bottom:15px; }
+    </style></head><body>`;
+
+    htmlPrint += `<h2>📌 Relatório por Almoxarifado</h2>`;
+
+    for(const almox in grupos){
+        htmlPrint += `<h3>📦 ${almox} — ${grupos[almox].length} notas</h3>`;
+        htmlPrint += `<table><tr>${COLUNAS_EXCEL.map(c=>`<th>${c}</th>`).join("")}</tr>`;
+
+        grupos[almox].forEach(r => {
+            htmlPrint += `<tr>${COLUNAS_EXCEL.map(c=>`<td>${r[c] ?? ""}</td>`).join("")}</tr>`;
+        });
+
+        htmlPrint += `</table>`;
+    }
+
+    htmlPrint += `</body></html>`;
+
+    const w = window.open();
+    w.document.write(htmlPrint);
+    w.document.close();
+    w.focus();
+    w.print();
+}
+
+
+
+/*  
+====================================================
+⭐ PATCH — IMPEDIR FECHAMENTO AO CLICAR NO <TH> ⭐
+====================================================
+*/
+
+// impedir que clique no cabeçalho interfira no <details>
+document.addEventListener("click", function(e) {
+    if (e.target.tagName === "TH") {
+        e.stopPropagation();
+    }
+}, true);
+
+
+// manter funcionamento manual do summary
+document.addEventListener("click", function (e) {
+    document.querySelectorAll("details").forEach(det => {
+        const summary = det.querySelector("summary");
+        const clicouResumo = e.target === summary || summary.contains(e.target);
+
+        if (clicouResumo) {
+            e.preventDefault();
+            det.open = !det.open;
+        }
+    });
+});
+
+// evitar fechamento automático default do navegador
+document.addEventListener("toggle", function (e) {
+    if (e.target.tagName === "DETAILS") {
+        e.stopImmediatePropagation();
+    }
+}, true);
+
+</script>
+</body>
+</html>
