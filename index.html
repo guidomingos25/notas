@@ -33,7 +33,6 @@ input[type="file"] {
 input[type="file"]::file-selector-button {
     color: #333;
 }
-
 </style>
 </head>
 
@@ -78,38 +77,97 @@ const COLUNAS_EXCEL = [
     "Data Inventario","Ultimo Inventario Filial","Status no Inventario"
 ];
 
-function formatDateBR(date){ 
+function formatDateBR(date){
     if(!date) return "";
     const d = String(date.getDate()).padStart(2,"0");
     const m = String(date.getMonth()+1).padStart(2,"0");
     return `${d}/${m}/${date.getFullYear()}`;
 }
 
+/*
+  parseDateLocal aprimorada:
+  - aceita Date objects,
+  - números serial do Excel,
+  - strings dd/mm/yyyy, dd/mm/yyyy hh:mm, yyyy-mm-dd, ISO (com T),
+  - retorna null quando não for data válida.
+  Normaliza para meia-noite (somente data).
+*/
 function parseDateLocal(val){
-    if(val instanceof Date) return new Date(val.getFullYear(), val.getMonth(), val.getDate());
-    if(!isNaN(val)){
+    if(val === null || val === undefined) return null;
+
+    // Já é Date
+    if(val instanceof Date && !isNaN(val)) {
+        return new Date(val.getFullYear(), val.getMonth(), val.getDate());
+    }
+
+    // Excel serial number
+    if(typeof val === "number" && !isNaN(val)){
         const d = new Date(Math.round((val - 25569) * 86400 * 1000));
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        if(!isNaN(d)) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        return null;
     }
-    if(typeof val === "string" && val.includes("/")){
-        const [d,m,y] = val.split("/");
-        return new Date(y, m-1, d);
+
+    if(typeof val === "string"){
+        const s = val.trim();
+
+        // dd/mm/yyyy ou dd/mm/yyyy hh:mm
+        if(s.includes("/")){
+            const parts = s.split(" ");
+            const datePart = parts[0];
+            const comps = datePart.split("/");
+            if(comps.length === 3){
+                const d = parseInt(comps[0],10);
+                const m = parseInt(comps[1],10) - 1;
+                const y = parseInt(comps[2],10);
+                if(!isNaN(d) && !isNaN(m) && !isNaN(y)){
+                    return new Date(y, m, d);
+                }
+            }
+        }
+
+        // tenta formato ISO / yyyy-mm-dd / com hora
+        const maybe = new Date(s);
+        if(!isNaN(maybe)){
+            return new Date(maybe.getFullYear(), maybe.getMonth(), maybe.getDate());
+        }
     }
+
     return null;
 }
 
 document.getElementById("fileInput").addEventListener("change", async function(e){
     const file = e.target.files[0];
     if(!file) return;
-    
+
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { cellDates:true, raw:true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
     let df = XLSX.utils.sheet_to_json(sheet, { raw:true, dateNF:"dd/mm/yyyy" });
+    df = df.filter(l => l["Numero OEF"] && String(l["Numero OEF"]).trim() !== "");
+
+
+
+    // Normaliza especialmente as duas colunas importantes (e as demais de data)
     df.forEach(linha => {
-        COLUNAS_DATA.forEach(col => { linha[col] = parseDateLocal(linha[col]); });
+        linha["Data de Entrada da Nota"] = parseDateLocal(linha["Data de Entrada da Nota"]);
+
+        // ⭐ AJUSTE — SOMAR +1 DIA EM TODAS AS REGRAS E EXIBIÇÃO
+        if (linha["Data de Entrada da Nota"] instanceof Date) {
+            linha["Data de Entrada da Nota"].setDate(
+                linha["Data de Entrada da Nota"].getDate() + 1
+            );
+        }
+
+        linha["Data de Check in"] = parseDateLocal(linha["Data de Check in"]);
+
+        COLUNAS_DATA.forEach(col => {
+            if(col !== "Data de Entrada da Nota" && col !== "Data de Check in"){
+                linha[col] = parseDateLocal(linha[col]);
+            }
+        });
     });
+
 
     dfGlobal = df;
     renderTabela();
@@ -126,20 +184,35 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
 
     const val = document.getElementById("diasCorte").value;
     const corteDias = val === "" ? null : parseInt(val);
+
+    // cálculo do limite SOMENTE se corteDias for válido
     const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const limite = new Date(hoje); limite.setDate(hoje.getDate() - corteDias);
+    const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime()) : null;
+    if(limite) limite.setDate(hoje.getDate() - corteDias);
 
     const dfFiltrado = df.filter(l => {
         if(filtroAlmoxSelecionado && l["Almoxarifado"] !== filtroAlmoxSelecionado) return false;
         if(filtroRangeSelecionado && l["Range de Dias"] !== filtroRangeSelecionado) return false;
 
-        const datas = COLUNAS_DATA.map(c => l[c]).filter(d => d instanceof Date);
-        if(datas.length === 0) return false;
+        const dEntrada = l["Data de Entrada da Nota"];
+        const dCheckin = l["Data de Check in"];
 
-        if (corteDias !== null) {
-            return new Date(Math.max(...datas)) <= limite;
+        if (corteDias !== null && limite) {
+            const limiteTime = limite.getTime();
+            const maiorData =
+                (dEntrada instanceof Date && !isNaN(dEntrada) &&
+                dCheckin instanceof Date && !isNaN(dCheckin))
+                    ? (dEntrada > dCheckin ? dEntrada : dCheckin)
+                    : (dEntrada instanceof Date && !isNaN(dEntrada) ? dEntrada :
+                    dCheckin instanceof Date && !isNaN(dCheckin) ? dCheckin : null);
+
+            if (corteDias !== null && limite) {
+                if (!maiorData) return false; // se não existe data válida, não exibe
+                return maiorData.getTime() <= limite.getTime();
+            }
+
         }
-        return true; // sem filtro
+        return true; // sem filtro de dias
 
     });
 
@@ -170,18 +243,32 @@ function renderTabela(){
 
     const val = document.getElementById("diasCorte").value;
     const corteDias = val === "" ? null : parseInt(val);
+
     const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const limite = new Date(hoje); limite.setDate(hoje.getDate() - corteDias);
+    const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime()) : null;
+    if(limite) limite.setDate(hoje.getDate() - corteDias);
 
     const dfFiltrado = dfGlobal.filter(l => {
         if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox) return false;
         if(filtroRange && l["Range de Dias"] !== filtroRange) return false;
 
-        const datas = COLUNAS_DATA.map(c => l[c]).filter(d => d instanceof Date);
-        if(datas.length === 0) return false;
+        const dEntrada = l["Data de Entrada da Nota"];
+        const dCheckin = l["Data de Check in"];
 
-        if (corteDias !== null) {
-            return new Date(Math.max(...datas)) <= limite;
+        if (corteDias !== null && limite) {
+            const limiteTime = limite.getTime();
+            const maiorData =
+                (dEntrada instanceof Date && !isNaN(dEntrada) &&
+                dCheckin instanceof Date && !isNaN(dCheckin))
+                    ? (dEntrada > dCheckin ? dEntrada : dCheckin)
+                    : (dEntrada instanceof Date && !isNaN(dEntrada) ? dEntrada :
+                    dCheckin instanceof Date && !isNaN(dCheckin) ? dCheckin : null);
+
+            if (corteDias !== null && limite) {
+                if (!maiorData) return false; // se não existe data válida, não exibe
+                return maiorData.getTime() <= limite.getTime();
+            }
+
         }
         return true; // sem filtro
 
