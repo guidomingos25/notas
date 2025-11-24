@@ -26,27 +26,36 @@ tr:nth-child(even) { background:#f1f5f9; }
 tr:hover { background:#e3f2fd; }
 .summary-resumo { margin-bottom:8px; font-size:13px; font-weight:600; color:#0d47a1; }
 
-@media print {
-    body { background:white; }
-    .container * { display:none; }
-    .print-table { display:block; width:100%; }
-    table { font-size:10px; border:1px solid #000; }
-    th, td { border:1px solid #000; padding:3px; }
+/* ⭐ ADIÇÃO — APENAS ISSO OCULTA O CAMINHO DO ARQUIVO */
+input[type="file"] {
+    color: transparent;
 }
+input[type="file"]::file-selector-button {
+    color: #333;
+}
+
 </style>
 </head>
 
 <body>
 <div class="container">
-    <h1>📌 Relatório por Almoxarifado (+6 dias)</h1>
+    <h1>📌 Relatório por Almoxarifado.</h1>
 
     <div class="filtros-botoes">
+
         <input type="file" id="fileInput" accept=".xlsx">
-        <select id="filtroAlmox"><option value="">Filtrar por Almoxarifado</option></select>
-        <select id="filtroRange"><option value="">Filtrar por Range de Dias</option></select>
+
+        <select id="filtroAlmox"><option value="">Almoxarifado</option></select>
+
+        <select id="filtroRange"><option value="">Range de Dias</option></select>
+
+        <input type="number" id="diasCorte" placeholder="Dias de Corte" min="1">
+
         <button onclick="baixarExcel()">💾 Excel</button>
         <button onclick="gerarRelatorioImpressao()">🖨️ Imprimir</button>
         <button onclick="toggleDetalhes()" id="btnToggle">⬆️ Expandir/Recolher Todos</button>
+        <button onclick="mostrarResumoGeral()">📊 Resumo Geral</button>
+
     </div>
 
     <div id="resultado"></div>
@@ -116,8 +125,10 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
     filtroAlmox.innerHTML = `<option value="">Filtrar por Almoxarifado</option>`;
     filtroRange.innerHTML = `<option value="">Filtrar por Range de Dias</option>`;
 
+    const val = document.getElementById("diasCorte").value;
+    const corteDias = val === "" ? null : parseInt(val);
     const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const limite = new Date(hoje); limite.setDate(hoje.getDate() - 6);
+    const limite = new Date(hoje); limite.setDate(hoje.getDate() - corteDias);
 
     const dfFiltrado = df.filter(l => {
         if(filtroAlmoxSelecionado && l["Almoxarifado"] !== filtroAlmoxSelecionado) return false;
@@ -126,7 +137,11 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
         const datas = COLUNAS_DATA.map(c => l[c]).filter(d => d instanceof Date);
         if(datas.length === 0) return false;
 
-        return new Date(Math.max(...datas)) <= limite;
+        if (corteDias !== null) {
+            return new Date(Math.max(...datas)) <= limite;
+        }
+        return true; // sem filtro
+
     });
 
     const almoxSet = new Set(dfFiltrado.map(l => l["Almoxarifado"]).filter(a => a));
@@ -142,25 +157,8 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
 
     filtroAlmox.onchange = renderTabela;
     filtroRange.onchange = renderTabela;
-}
 
-
-// ------------------- ORDENAÇÃO -------------------
-function ordenarArray(arr, coluna, asc = true){
-    return arr.sort((a,b)=>{
-        let A = a[coluna] ?? "";
-        let B = b[coluna] ?? "";
-
-        if(A instanceof Date && B instanceof Date) return asc ? A-B : B-A;
-
-        const nA = parseFloat(A);
-        const nB = parseFloat(B);
-        if(!isNaN(nA) && !isNaN(nB)) return asc ? nA-nB : nB-nA;
-
-        A = String(A).toLowerCase();
-        B = String(B).toLowerCase();
-        return asc ? A.localeCompare(B) : B.localeCompare(A);
-    });
+    document.getElementById("diasCorte").onchange = renderTabela;
 }
 
 
@@ -171,8 +169,10 @@ function renderTabela(){
 
     preencherFiltros(dfGlobal, filtroAlmox, filtroRange);
 
+    const val = document.getElementById("diasCorte").value;
+    const corteDias = val === "" ? null : parseInt(val);
     const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const limite = new Date(hoje); limite.setDate(hoje.getDate() - 6);
+    const limite = new Date(hoje); limite.setDate(hoje.getDate() - corteDias);
 
     const dfFiltrado = dfGlobal.filter(l => {
         if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox) return false;
@@ -181,7 +181,11 @@ function renderTabela(){
         const datas = COLUNAS_DATA.map(c => l[c]).filter(d => d instanceof Date);
         if(datas.length === 0) return false;
 
-        return new Date(Math.max(...datas)) <= limite;
+        if (corteDias !== null) {
+            return new Date(Math.max(...datas)) <= limite;
+        }
+        return true; // sem filtro
+
     });
 
     const todasColunas = Array.from(new Set(dfGlobal.flatMap(obj => Object.keys(obj))));
@@ -231,7 +235,27 @@ function renderTabela(){
     }
 
     document.getElementById("resultado").innerHTML = html;
+
+    document.querySelectorAll("details").forEach(d => d.open = true);
     atualizarBotaoToggle();
+
+}
+
+function ordenarArray(arr, coluna, asc = true){
+    return arr.sort((a,b)=>{
+        let A = a[coluna] ?? "";
+        let B = b[coluna] ?? "";
+
+        if(A instanceof Date && B instanceof Date) return asc ? A-B : B-A;
+
+        const nA = parseFloat(A);
+        const nB = parseFloat(B);
+        if(!isNaN(nA) && !isNaN(nB)) return asc ? nA-nB : nB-nA;
+
+        A = String(A).toLowerCase();
+        B = String(B).toLowerCase();
+        return asc ? A.localeCompare(B) : B.localeCompare(A);
+    });
 }
 
 
@@ -357,21 +381,18 @@ function gerarRelatorioImpressao(){
 
 
 
-/*  
+/*
 ====================================================
 ⭐ PATCH — IMPEDIR FECHAMENTO AO CLICAR NO <TH> ⭐
 ====================================================
 */
 
-// impedir que clique no cabeçalho interfira no <details>
 document.addEventListener("click", function(e) {
     if (e.target.tagName === "TH") {
         e.stopPropagation();
     }
 }, true);
 
-
-// manter funcionamento manual do summary
 document.addEventListener("click", function (e) {
     document.querySelectorAll("details").forEach(det => {
         const summary = det.querySelector("summary");
@@ -384,12 +405,60 @@ document.addEventListener("click", function (e) {
     });
 });
 
-// evitar fechamento automático default do navegador
 document.addEventListener("toggle", function (e) {
     if (e.target.tagName === "DETAILS") {
         e.stopImmediatePropagation();
     }
 }, true);
+
+function mostrarResumoGeral(){
+    const existente = document.getElementById("resumo-geral-box");
+
+    // 🔄 Se já existe → remover (toggle OFF)
+    if (existente) {
+        existente.remove();
+        return;
+    }
+
+    // 🔄 Caso contrário → gerar (toggle ON)
+    const details = document.querySelectorAll("details");
+    let almoxCount = details.length;
+    let totalNotas = 0;
+    let totalPeso = 0;
+    let totalVolumes = 0;
+
+    details.forEach(det => {
+        const textoResumo = det.querySelector(".summary-resumo")?.innerText || "";
+        const partes = textoResumo.match(/Notas: (\d+).*Peso: ([\d.]+).*Volumes: (\d+)/);
+
+        if(partes){
+            totalNotas += parseInt(partes[1]);
+            totalPeso += parseFloat(partes[2]);
+            totalVolumes += parseInt(partes[3]);
+        }
+    });
+
+    const resumoHTML = `
+    <div id="resumo-geral-box" style="
+        background:#e3f2fd;
+        border:1px solid #90caf9;
+        padding:12px;
+        border-radius:10px;
+        margin-bottom:15px;
+        font-size:14px;
+        font-weight:600;
+        color:#0d47a1;
+    ">
+        📊 <strong>Resumo Geral</strong><br>
+        Almoxarifados exibidos: ${almoxCount}<br>
+        Total de Notas: ${totalNotas}<br>
+        Peso Total: ${totalPeso.toFixed(2)}<br>
+        Volumes Totais: ${totalVolumes}
+    </div>`;
+
+    document.getElementById("resultado").insertAdjacentHTML("afterbegin", resumoHTML);
+}
+
 
 </script>
 </body>
