@@ -6,6 +6,10 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+
 <style>
 body { font-family: 'Inter', sans-serif; background: #f4f6f8; margin:0; padding:25px; font-size:14px; color:#333; transition: all 0.3s; }
 h1 { text-align:center; margin-bottom:20px; font-size:26px; font-weight:600; color:#1a237e; }
@@ -32,6 +36,44 @@ input[type="file"] {
 }
 input[type="file"]::file-selector-button {
     color: #333;
+}
+
+/* ====== Modal / Popup styles for chart ====== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.modal {
+  width: 900px;
+  max-width: calc(100% - 40px);
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+.modal-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:12px;
+}
+.modal-title { font-weight:700; color:#0d47a1; }
+.modal-close {
+  background:#e0e0e0;
+  border:none;
+  padding:6px 10px;
+  border-radius:8px;
+  cursor:pointer;
+}
+.modal-body { width:100%; }
+.chart-legend { margin-top:8px; font-size:13px; color:#333; }
+@media (max-width:640px){
+  .modal { padding:12px; }
 }
 </style>
 </head>
@@ -168,6 +210,31 @@ document.getElementById("fileInput").addEventListener("change", async function(e
         });
     });
 
+    // ⭐⭐⭐ CÁLCULO REAL DO RANGE DE DIAS (AQUI É A CORREÇÃO PEDIDA)
+    df.forEach(linha => {
+        const dEntrada = linha["Data de Entrada da Nota"] instanceof Date ? linha["Data de Entrada da Nota"] : null;
+        const dCheck   = linha["Data de Check in"] instanceof Date ? linha["Data de Check in"] : null;
+
+        let maiorData = null;
+
+        if (dEntrada && dCheck) {
+            maiorData = dEntrada > dCheck ? dEntrada : dCheck;
+        } else if (dEntrada) {
+            maiorData = dEntrada;
+        } else if (dCheck) {
+            maiorData = dCheck;
+        }
+
+        if (maiorData) {
+            const hoje = new Date();
+            hoje.setHours(0,0,0,0);
+
+            const diff = Math.round((hoje - maiorData) / (1000*60*60*24));
+            linha["Range de Dias"] = diff;
+        } else {
+            linha["Range de Dias"] = "";
+        }
+    });
 
     dfGlobal = df;
     renderTabela();
@@ -497,12 +564,220 @@ document.addEventListener("toggle", function (e) {
     }
 }, true);
 
+/*
+====================================================
+|  Funções extra para gerar o chart (popup)       |
+====================================================
+*/
+
+
+// Retorna os dados atualmente exibidos (mesma lógica de filtro do renderTabela)
+function getCurrentFilteredData(){
+    const filtroAlmox = document.getElementById("filtroAlmox").value;
+    const filtroRange = document.getElementById("filtroRange").value;
+    const val = document.getElementById("diasCorte").value;
+    const corteDias = val === "" ? null : parseInt(val);
+
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime()) : null;
+    if(limite) limite.setDate(hoje.getDate() - corteDias);
+
+    const filtered = dfGlobal.filter(l => {
+        if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox) return false;
+        if(filtroRange && l["Range de Dias"] !== filtroRange) return false;
+
+        const dEntrada = l["Data de Entrada da Nota"];
+        const dCheckin = l["Data de Check in"];
+
+        if (corteDias !== null && limite) {
+            const maiorData =
+                (dEntrada instanceof Date && !isNaN(dEntrada) &&
+                dCheckin instanceof Date && !isNaN(dCheckin))
+                    ? (dEntrada > dCheckin ? dEntrada : dCheckin)
+                    : (dEntrada instanceof Date && !isNaN(dEntrada) ? dEntrada :
+                    dCheckin instanceof Date && !isNaN(dCheckin) ? dCheckin : null);
+
+            if (!maiorData) return false;
+            return maiorData.getTime() <= limite.getTime();
+        }
+        return true;
+    });
+
+    return filtered;
+}
+
+// Constrói a matriz de contagens: almoxarifado x range
+function buildChartCounts(filteredData){
+    // Ranges fixos solicitados
+    const rangeGroups = {
+        "0–5 dias":   d => d >= 0 && d <= 5,
+        "6–10 dias":  d => d >= 6 && d <= 10,
+        "11–20 dias": d => d >= 11 && d <= 20,
+        "21+ dias":   d => d >= 21
+    };
+
+    // Lista de almoxarifados ordenados
+    const almoxs = Array.from(
+        new Set(filteredData.map(r => r["Almoxarifado"] || "Sem Almoxarifado"))
+    ).sort();
+
+    // Criar estrutura de contagem zerada
+    const counts = {};
+    Object.keys(rangeGroups).forEach(r => {
+        counts[r] = almoxs.map(() => 0);
+    });
+
+    // Preencher contagens corretamente
+    filteredData.forEach(row => {
+        const alm = row["Almoxarifado"] || "Sem Almoxarifado";
+        const dias = row["Range de Dias"];
+
+        if (dias === "" || dias === null || isNaN(dias)) return;
+
+        const i = almoxs.indexOf(alm);
+        if (i < 0) return;
+
+        for (const group in rangeGroups) {
+            if (rangeGroups[group](dias)) {
+                counts[group][i]++;
+                break;
+            }
+        }
+    });
+
+    return {
+        almoxs,
+        ranges: Object.keys(rangeGroups),
+        counts
+    };
+}
+
+
+let currentChart = null;
+
+// Cria e abre modal + chart
+function openChartModal(){
+    const filtered = getCurrentFilteredData();
+    const { almoxs, ranges, counts } = buildChartCounts(filtered);
+
+    // se não tem dados, avisa e retorna
+    if(almoxs.length === 0){
+        alert("Nenhum dado para exibir no gráfico (verifique filtros).");
+        return;
+    }
+
+    // criar overlay modal
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "chart-modal-overlay";
+
+    // modal HTML
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <div class="modal-title">Resumo Geral — Gráfico por Almoxarifado / Range de Dias</div>
+          <button class="modal-close" id="chart-modal-close">Fechar</button>
+        </div>
+        <div class="modal-body">
+          <canvas id="resumoChart" style="width:100%;max-height:420px"></canvas>
+          <div class="chart-legend" id="chart-legend"></div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // montar datasets para Chart.js (cada range é um dataset)
+    const palette = {
+    "0–5 dias":   "#1565C0", // azul forte
+    "6–10 dias":  "#2E7D32", // verde escuro
+    "11–20 dias": "#F9A825", // amarelo bem contrastante
+    "21+ dias":   "#C62828"  // vermelho forte
+    };
+
+    const datasets = ranges.map(r => ({
+        label: r,
+        data: counts[r],
+        backgroundColor: palette[r],
+        borderColor: palette[r],
+        borderWidth: 1,
+        stack: "Stack 0"
+    }));
+
+
+    // let Chart.js decide colors: we'll not set explicit colors to keep it simple (browser default palette)
+    // Create chart
+    const ctx = document.getElementById("resumoChart").getContext("2d");
+
+    // If an existing chart exists, destroy
+    if(currentChart){
+        try { currentChart.destroy(); } catch(e){/*ignore*/ }
+        currentChart = null;
+    }
+
+    currentChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: almoxs,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: { enabled: true },
+
+                // ⭐ RÓTULOS DE DADOS
+                datalabels: {
+                    color: '#000',
+                    anchor: 'center',
+                    align: 'center',
+                    font: { weight: 'bold', size: 11 },
+                    formatter: value => (value > 0 ? value : '')
+                }
+            },
+            scales: {
+                x: { stacked: true, title: { display: true, text: 'Almoxarifado' } },
+                y: { stacked: true, title: { display: true, text: 'Número de Notas' }, beginAtZero: true }
+            }
+        },
+        plugins: [ChartDataLabels]   // ⭐ importante!
+    });
+
+
+    // build a small legend HTML (optional)
+    const legendDiv = document.getElementById("chart-legend");
+    legendDiv.innerHTML = ranges.map(r => `<span style="display:inline-block;margin-right:8px;padding:6px 10px;border-radius:8px;background:#f1f1f1;margin-bottom:6px;">${r}</span>`).join("");
+
+    // close button handler
+    document.getElementById("chart-modal-close").onclick = () => closeChartModal();
+    overlay.onclick = (ev) => {
+        if(ev.target === overlay) closeChartModal();
+    };
+}
+
+function closeChartModal(){
+    const overlay = document.getElementById("chart-modal-overlay");
+    if(overlay){
+        if(currentChart){
+            try { currentChart.destroy(); } catch(e){/*ignore*/ }
+            currentChart = null;
+        }
+        overlay.remove();
+    }
+}
+
+// ---------------- Mostrar Resumo + abrir popup ----------------
 function mostrarResumoGeral(){
     const existente = document.getElementById("resumo-geral-box");
 
     // 🔄 Se já existe → remover (toggle OFF)
     if (existente) {
         existente.remove();
+        // também fecho modal se aberto
+        closeChartModal();
         return;
     }
 
@@ -543,6 +818,9 @@ function mostrarResumoGeral(){
     </div>`;
 
     document.getElementById("resultado").insertAdjacentHTML("afterbegin", resumoHTML);
+
+    // abre modal com chart usando os dados atuais (mesma filtragem)
+    openChartModal();
 }
 
 
