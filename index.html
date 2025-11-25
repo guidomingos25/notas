@@ -72,9 +72,31 @@ input[type="file"]::file-selector-button {
 }
 .modal-body { width:100%; }
 .chart-legend { margin-top:8px; font-size:13px; color:#333; }
+
+/* summary area inside modal (below chart) */
+.modal-summary {
+  margin-top:12px;
+  background:#f7fbff;
+  border:1px solid #d6e9ff;
+  padding:12px;
+  border-radius:8px;
+  font-size:13px;
+  color:#0d47a1;
+}
+.modal-summary h4 { margin:6px 0; font-size:14px; color:#0b3a66; }
+.modal-summary pre { white-space:pre-wrap; font-family:inherit; font-size:13px; color:#0b3a66; margin:6px 0 0 0; }
+
 @media (max-width:640px){
   .modal { padding:12px; }
 }
+
+/* Permite scroll no conteúdo interno do modal */
+.modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
 </style>
 </head>
 
@@ -128,31 +150,17 @@ function formatDateBR(date){
 
 /*
   parseDateLocal aprimorada:
-  - aceita Date objects,
-  - números serial do Excel,
-  - strings dd/mm/yyyy, dd/mm/yyyy hh:mm, yyyy-mm-dd, ISO (com T),
-  - retorna null quando não for data válida.
-  Normaliza para meia-noite (somente data).
 */
 function parseDateLocal(val){
     if(val === null || val === undefined) return null;
-
-    // Já é Date
-    if(val instanceof Date && !isNaN(val)) {
-        return new Date(val.getFullYear(), val.getMonth(), val.getDate());
-    }
-
-    // Excel serial number
+    if(val instanceof Date && !isNaN(val)) return new Date(val.getFullYear(), val.getMonth(), val.getDate());
     if(typeof val === "number" && !isNaN(val)){
         const d = new Date(Math.round((val - 25569) * 86400 * 1000));
         if(!isNaN(d)) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
         return null;
     }
-
     if(typeof val === "string"){
         const s = val.trim();
-
-        // dd/mm/yyyy ou dd/mm/yyyy hh:mm
         if(s.includes("/")){
             const parts = s.split(" ");
             const datePart = parts[0];
@@ -161,19 +169,12 @@ function parseDateLocal(val){
                 const d = parseInt(comps[0],10);
                 const m = parseInt(comps[1],10) - 1;
                 const y = parseInt(comps[2],10);
-                if(!isNaN(d) && !isNaN(m) && !isNaN(y)){
-                    return new Date(y, m, d);
-                }
+                if(!isNaN(d) && !isNaN(m) && !isNaN(y)) return new Date(y, m, d);
             }
         }
-
-        // tenta formato ISO / yyyy-mm-dd / com hora
         const maybe = new Date(s);
-        if(!isNaN(maybe)){
-            return new Date(maybe.getFullYear(), maybe.getMonth(), maybe.getDate());
-        }
+        if(!isNaN(maybe)) return new Date(maybe.getFullYear(), maybe.getMonth(), maybe.getDate());
     }
-
     return null;
 }
 
@@ -188,21 +189,12 @@ document.getElementById("fileInput").addEventListener("change", async function(e
     let df = XLSX.utils.sheet_to_json(sheet, { raw:true, dateNF:"dd/mm/yyyy" });
     df = df.filter(l => l["Numero OEF"] && String(l["Numero OEF"]).trim() !== "");
 
-
-
-    // Normaliza especialmente as duas colunas importantes (e as demais de data)
     df.forEach(linha => {
         linha["Data de Entrada da Nota"] = parseDateLocal(linha["Data de Entrada da Nota"]);
-
-        // ⭐ AJUSTE — SOMAR +1 DIA EM TODAS AS REGRAS E EXIBIÇÃO
         if (linha["Data de Entrada da Nota"] instanceof Date) {
-            linha["Data de Entrada da Nota"].setDate(
-                linha["Data de Entrada da Nota"].getDate() + 1
-            );
+            linha["Data de Entrada da Nota"].setDate(linha["Data de Entrada da Nota"].getDate() + 1);
         }
-
         linha["Data de Check in"] = parseDateLocal(linha["Data de Check in"]);
-
         COLUNAS_DATA.forEach(col => {
             if(col !== "Data de Entrada da Nota" && col !== "Data de Check in"){
                 linha[col] = parseDateLocal(linha[col]);
@@ -210,25 +202,16 @@ document.getElementById("fileInput").addEventListener("change", async function(e
         });
     });
 
-    // ⭐⭐⭐ CÁLCULO REAL DO RANGE DE DIAS (AQUI É A CORREÇÃO PEDIDA)
     df.forEach(linha => {
         const dEntrada = linha["Data de Entrada da Nota"] instanceof Date ? linha["Data de Entrada da Nota"] : null;
         const dCheck   = linha["Data de Check in"] instanceof Date ? linha["Data de Check in"] : null;
-
         let maiorData = null;
-
-        if (dEntrada && dCheck) {
-            maiorData = dEntrada > dCheck ? dEntrada : dCheck;
-        } else if (dEntrada) {
-            maiorData = dEntrada;
-        } else if (dCheck) {
-            maiorData = dCheck;
-        }
+        if (dEntrada && dCheck) maiorData = dEntrada > dCheck ? dEntrada : dCheck;
+        else if (dEntrada) maiorData = dEntrada;
+        else if (dCheck) maiorData = dCheck;
 
         if (maiorData) {
-            const hoje = new Date();
-            hoje.setHours(0,0,0,0);
-
+            const hoje = new Date(); hoje.setHours(0,0,0,0);
             const diff = Math.round((hoje - maiorData) / (1000*60*60*24));
             linha["Range de Dias"] = diff;
         } else {
@@ -239,7 +222,6 @@ document.getElementById("fileInput").addEventListener("change", async function(e
     dfGlobal = df;
     renderTabela();
 });
-
 
 // ------------------- FILTROS -------------------
 function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
@@ -252,7 +234,6 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
     const val = document.getElementById("diasCorte").value;
     const corteDias = val === "" ? null : parseInt(val);
 
-    // cálculo do limite SOMENTE se corteDias for válido
     const hoje = new Date(); hoje.setHours(0,0,0,0);
     const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime()) : null;
     if(limite) limite.setDate(hoje.getDate() - corteDias);
@@ -265,7 +246,6 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
         const dCheckin = l["Data de Check in"];
 
         if (corteDias !== null && limite) {
-            const limiteTime = limite.getTime();
             const maiorData =
                 (dEntrada instanceof Date && !isNaN(dEntrada) &&
                 dCheckin instanceof Date && !isNaN(dCheckin))
@@ -273,14 +253,10 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
                     : (dEntrada instanceof Date && !isNaN(dEntrada) ? dEntrada :
                     dCheckin instanceof Date && !isNaN(dCheckin) ? dCheckin : null);
 
-            if (corteDias !== null && limite) {
-                if (!maiorData) return false; // se não existe data válida, não exibe
-                return maiorData.getTime() <= limite.getTime();
-            }
-
+            if (!maiorData) return false;
+            return maiorData.getTime() <= limite.getTime();
         }
-        return true; // sem filtro de dias
-
+        return true;
     });
 
     const almoxSet = new Set(dfFiltrado.map(l => l["Almoxarifado"]).filter(a => a));
@@ -290,16 +266,14 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
         filtroAlmox.innerHTML += `<option value="${a}" ${filtroAlmoxSelecionado===a?'selected':''}>${a}</option>`;
     });
 
-    [...rangeSet].sort().forEach(r => {
-        filtroRange.innerHTML += `<option value="${r}" ${filtroRangeSelecionado===r?'selected':''}>${r}</option>`;
+    [...rangeSet].sort((x,y)=>x-y).forEach(r => {
+        filtroRange.innerHTML += `<option value="${r}" ${filtroRangeSelecionado===String(r)?'selected':''}>${r}</option>`;
     });
 
     filtroAlmox.onchange = renderTabela;
     filtroRange.onchange = renderTabela;
-
     document.getElementById("diasCorte").onchange = renderTabela;
 }
-
 
 // ------------------- RENDER TABELA -------------------
 function renderTabela(){
@@ -323,7 +297,6 @@ function renderTabela(){
         const dCheckin = l["Data de Check in"];
 
         if (corteDias !== null && limite) {
-            const limiteTime = limite.getTime();
             const maiorData =
                 (dEntrada instanceof Date && !isNaN(dEntrada) &&
                 dCheckin instanceof Date && !isNaN(dCheckin))
@@ -331,14 +304,10 @@ function renderTabela(){
                     : (dEntrada instanceof Date && !isNaN(dEntrada) ? dEntrada :
                     dCheckin instanceof Date && !isNaN(dCheckin) ? dCheckin : null);
 
-            if (corteDias !== null && limite) {
-                if (!maiorData) return false; // se não existe data válida, não exibe
-                return maiorData.getTime() <= limite.getTime();
-            }
-
+            if (!maiorData) return false;
+            return maiorData.getTime() <= limite.getTime();
         }
-        return true; // sem filtro
-
+        return true;
     });
 
     const todasColunas = Array.from(new Set(dfGlobal.flatMap(obj => Object.keys(obj))));
@@ -389,28 +358,24 @@ function renderTabela(){
 
     document.getElementById("resultado").innerHTML = html;
 
+    // manter comportamento: abrir todos
     document.querySelectorAll("details").forEach(d => d.open = true);
     atualizarBotaoToggle();
-
 }
 
 function ordenarArray(arr, coluna, asc = true){
     return arr.sort((a,b)=>{
         let A = a[coluna] ?? "";
         let B = b[coluna] ?? "";
-
         if(A instanceof Date && B instanceof Date) return asc ? A-B : B-A;
-
         const nA = parseFloat(A);
         const nB = parseFloat(B);
         if(!isNaN(nA) && !isNaN(nB)) return asc ? nA-nB : nB-nA;
-
         A = String(A).toLowerCase();
         B = String(B).toLowerCase();
         return asc ? A.localeCompare(B) : B.localeCompare(A);
     });
 }
-
 
 // ------------------- ORDENAÇÃO CABEÇALHO -------------------
 function clicarCabecalho(coluna){
@@ -418,7 +383,6 @@ function clicarCabecalho(coluna){
     else { ordenacao.coluna = coluna; ordenacao.asc = true; }
     renderTabela();
 }
-
 
 // ------------------- ABRIR / FECHAR TODOS -------------------
 function toggleDetalhes(){
@@ -435,7 +399,6 @@ function atualizarBotaoToggle(){
     btn.innerText = todosAbertos ? "⬇️ Recolher Todos" : "⬆️ Expandir Todos";
 }
 
-
 // ------------------- EXPORTAR EXCEL -------------------
 function baixarExcel(){
     const data = [];
@@ -448,13 +411,11 @@ function baixarExcel(){
             rows.forEach(tr => {
                 const rowData = Array.from(tr.querySelectorAll("td")).map(td => td.innerText);
                 const obj = {};
-
                 COLUNAS_EXCEL.forEach(col => {
                     const index = Array.from(table.querySelectorAll("th"))
                         .findIndex(th => th.innerText === col);
                     obj[col] = index >= 0 ? rowData[index] : "";
                 });
-
                 data.push(obj);
             });
         }
@@ -468,7 +429,6 @@ function baixarExcel(){
     XLSX.writeFile(wb, "relatorio_aberto.xlsx");
 }
 
-
 // ------------------- IMPRESSÃO -------------------
 function gerarRelatorioImpressao(){
     const grupos = {};
@@ -477,21 +437,16 @@ function gerarRelatorioImpressao(){
         if(detail.open){
             const table = detail.querySelector("table");
             const almox = detail.querySelector("summary").innerText.split(' — ')[0].replace("📦 ","");
-
             if(!grupos[almox]) grupos[almox] = [];
-
             const rows = Array.from(table.querySelectorAll("tr")).slice(1);
-
             rows.forEach(tr => {
                 const rowData = Array.from(tr.querySelectorAll("td")).map(td => td.innerText);
                 const obj = {};
-
                 COLUNAS_EXCEL.forEach(col => {
                     const idx = Array.from(table.querySelectorAll("th"))
                         .findIndex(th => th.innerText === col);
                     obj[col] = idx >= 0 ? rowData[idx] : "";
                 });
-
                 grupos[almox].push(obj);
             });
         }
@@ -515,11 +470,9 @@ function gerarRelatorioImpressao(){
     for(const almox in grupos){
         htmlPrint += `<h3>📦 ${almox} — ${grupos[almox].length} notas</h3>`;
         htmlPrint += `<table><tr>${COLUNAS_EXCEL.map(c=>`<th>${c}</th>`).join("")}</tr>`;
-
         grupos[almox].forEach(r => {
             htmlPrint += `<tr>${COLUNAS_EXCEL.map(c=>`<td>${r[c] ?? ""}</td>`).join("")}</tr>`;
         });
-
         htmlPrint += `</table>`;
     }
 
@@ -532,14 +485,11 @@ function gerarRelatorioImpressao(){
     w.print();
 }
 
-
-
 /*
 ====================================================
 ⭐ PATCH — IMPEDIR FECHAMENTO AO CLICAR NO <TH> ⭐
 ====================================================
 */
-
 document.addEventListener("click", function(e) {
     if (e.target.tagName === "TH") {
         e.stopPropagation();
@@ -550,7 +500,6 @@ document.addEventListener("click", function (e) {
     document.querySelectorAll("details").forEach(det => {
         const summary = det.querySelector("summary");
         const clicouResumo = e.target === summary || summary.contains(e.target);
-
         if (clicouResumo) {
             e.preventDefault();
             det.open = !det.open;
@@ -569,7 +518,6 @@ document.addEventListener("toggle", function (e) {
 |  Funções extra para gerar o chart (popup)       |
 ====================================================
 */
-
 
 // Retorna os dados atualmente exibidos (mesma lógica de filtro do renderTabela)
 function getCurrentFilteredData(){
@@ -608,7 +556,6 @@ function getCurrentFilteredData(){
 
 // Constrói a matriz de contagens: almoxarifado x range
 function buildChartCounts(filteredData){
-    // Ranges fixos solicitados
     const rangeGroups = {
         "0–5 dias":   d => d >= 0 && d <= 5,
         "6–10 dias":  d => d >= 6 && d <= 10,
@@ -616,27 +563,16 @@ function buildChartCounts(filteredData){
         "21+ dias":   d => d >= 21
     };
 
-    // Lista de almoxarifados ordenados
-    const almoxs = Array.from(
-        new Set(filteredData.map(r => r["Almoxarifado"] || "Sem Almoxarifado"))
-    ).sort();
-
-    // Criar estrutura de contagem zerada
+    const almoxs = Array.from(new Set(filteredData.map(r => r["Almoxarifado"] || "Sem Almoxarifado"))).sort();
     const counts = {};
-    Object.keys(rangeGroups).forEach(r => {
-        counts[r] = almoxs.map(() => 0);
-    });
+    Object.keys(rangeGroups).forEach(r => counts[r] = almoxs.map(() => 0));
 
-    // Preencher contagens corretamente
     filteredData.forEach(row => {
         const alm = row["Almoxarifado"] || "Sem Almoxarifado";
         const dias = row["Range de Dias"];
-
         if (dias === "" || dias === null || isNaN(dias)) return;
-
         const i = almoxs.indexOf(alm);
         if (i < 0) return;
-
         for (const group in rangeGroups) {
             if (rangeGroups[group](dias)) {
                 counts[group][i]++;
@@ -645,33 +581,72 @@ function buildChartCounts(filteredData){
         }
     });
 
-    return {
-        almoxs,
-        ranges: Object.keys(rangeGroups),
-        counts
-    };
+    return { almoxs, ranges: Object.keys(rangeGroups), counts };
 }
 
+// Gera resumo detalhado textual (Geral, por almoxarifado, por range)
+function buildSummaryText(filteredData){
+    const resumo = {
+        totalNotas: 0,
+        totalPeso: 0,
+        totalVolumes: 0,
+        porAlmox: {},   // almox -> {notas, peso, volumes}
+        porRange: { "0–5 dias":0, "6–10 dias":0, "11–20 dias":0, "21+ dias":0 }
+    };
+
+    const rangeGroups = {
+        "0–5 dias":   d => d >= 0 && d <= 5,
+        "6–10 dias":  d => d >= 6 && d <= 10,
+        "11–20 dias": d => d >= 11 && d <= 20,
+        "21+ dias":   d => d >= 21
+    };
+
+    filteredData.forEach(r => {
+        resumo.totalNotas += 1;
+        resumo.totalPeso += parseFloat(r["Peso"]) || 0;
+        resumo.totalVolumes += parseFloat(r["Volumes"]) || 0;
+
+        const alm = r["Almoxarifado"] || "Sem Almoxarifado";
+        if(!resumo.porAlmox[alm]) resumo.porAlmox[alm] = { notas:0, peso:0, volumes:0 };
+        resumo.porAlmox[alm].notas += 1;
+        resumo.porAlmox[alm].peso += parseFloat(r["Peso"]) || 0;
+        resumo.porAlmox[alm].volumes += parseFloat(r["Volumes"]) || 0;
+
+        const dias = r["Range de Dias"];
+        if(!(dias === "" || dias === null || isNaN(dias))){
+            for(const key in rangeGroups){
+                if(rangeGroups[key](dias)){
+                    resumo.porRange[key] += 1;
+                    break;
+                }
+            }
+        }
+    });
+
+    return resumo;
+}
 
 let currentChart = null;
 
-// Cria e abre modal + chart
-function openChartModal(){
+// Cria e abre modal + chart + resumo (resumo ficará abaixo do gráfico conforme pedido — opção 2)
+function openChartModalWithSummary(){
     const filtered = getCurrentFilteredData();
     const { almoxs, ranges, counts } = buildChartCounts(filtered);
 
-    // se não tem dados, avisa e retorna
     if(almoxs.length === 0){
         alert("Nenhum dado para exibir no gráfico (verifique filtros).");
         return;
     }
 
-    // criar overlay modal
+    // Build summary text structure
+    const resumo = buildSummaryText(filtered);
+
+
+    // montar modal
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.id = "chart-modal-overlay";
 
-    // modal HTML
     overlay.innerHTML = `
       <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-header">
@@ -679,20 +654,32 @@ function openChartModal(){
           <button class="modal-close" id="chart-modal-close">Fechar</button>
         </div>
         <div class="modal-body">
-          <canvas id="resumoChart" style="width:100%;max-height:420px"></canvas>
+          <div style="height:420px;"><canvas id="resumoChart" style="width:100%;height:100%;"></canvas></div>
           <div class="chart-legend" id="chart-legend"></div>
+
+          <!-- RESUMO DETALHADO (ABAIXO DO GRÁFICO) -->
+          <div class="modal-summary" id="modal-summary">
+            <h4>Resumo Geral</h4>
+            <div id="resumo-geral-text"></div>
+
+            <h4>Resumo por Almoxarifado</h4>
+            <pre id="resumo-por-almox"></pre>
+
+            <h4>Resumo por Range de Dias</h4>
+            <pre id="resumo-por-range"></pre>
+          </div>
         </div>
       </div>
     `;
 
     document.body.appendChild(overlay);
 
-    // montar datasets para Chart.js (cada range é um dataset)
+    // montar datasets com palette
     const palette = {
-    "0–5 dias":   "#1565C0", // azul forte
-    "6–10 dias":  "#2E7D32", // verde escuro
-    "11–20 dias": "#F9A825", // amarelo bem contrastante
-    "21+ dias":   "#C62828"  // vermelho forte
+        "0–5 dias":   "#1565C0",
+        "6–10 dias":  "#2E7D32",
+        "11–20 dias": "#F9A825",
+        "21+ dias":   "#C62828"
     };
 
     const datasets = ranges.map(r => ({
@@ -704,14 +691,9 @@ function openChartModal(){
         stack: "Stack 0"
     }));
 
-
-    // let Chart.js decide colors: we'll not set explicit colors to keep it simple (browser default palette)
-    // Create chart
     const ctx = document.getElementById("resumoChart").getContext("2d");
-
-    // If an existing chart exists, destroy
     if(currentChart){
-        try { currentChart.destroy(); } catch(e){/*ignore*/ }
+        try { currentChart.destroy(); } catch(e){}
         currentChart = null;
     }
 
@@ -728,8 +710,6 @@ function openChartModal(){
             plugins: {
                 legend: { position: 'top' },
                 tooltip: { enabled: true },
-
-                // ⭐ RÓTULOS DE DADOS
                 datalabels: {
                     color: '#000',
                     anchor: 'center',
@@ -743,15 +723,32 @@ function openChartModal(){
                 y: { stacked: true, title: { display: true, text: 'Número de Notas' }, beginAtZero: true }
             }
         },
-        plugins: [ChartDataLabels]   // ⭐ importante!
+        plugins: [ChartDataLabels]
     });
 
-
-    // build a small legend HTML (optional)
+    // legend HTML
     const legendDiv = document.getElementById("chart-legend");
     legendDiv.innerHTML = ranges.map(r => `<span style="display:inline-block;margin-right:8px;padding:6px 10px;border-radius:8px;background:#f1f1f1;margin-bottom:6px;">${r}</span>`).join("");
 
-    // close button handler
+    // preencher resumo detalhado (ABAIXO DO GRÁFICO)
+    document.getElementById("resumo-geral-text").innerHTML =
+        `Almoxarifados exibidos: <strong>${Object.keys(resumo.porAlmox).length}</strong> &nbsp;|&nbsp; ` +
+        `Total de Notas: <strong>${resumo.totalNotas}</strong> &nbsp;|&nbsp; ` +
+        `Peso Total: <strong>${resumo.totalPeso.toFixed(2)}</strong> &nbsp;|&nbsp; ` +
+        `Volumes Totais: <strong>${resumo.totalVolumes}</strong>`;
+
+    const porAlmoxText = Object.keys(resumo.porAlmox).sort().map(a => {
+        const v = resumo.porAlmox[a];
+        return `${a} — ${v.notas} notas | ${v.peso.toFixed(2)} kg | ${v.volumes} volumes`;
+    }).join("\n");
+    document.getElementById("resumo-por-almox").innerText = porAlmoxText || "—";
+
+    const porRangeText = Object.keys(resumo.porRange).map(r => `${r}: ${resumo.porRange[r]} notas`).join("\n");
+    document.getElementById("resumo-por-range").innerText = porRangeText || "—";
+
+    
+
+    // evento de fechamento
     document.getElementById("chart-modal-close").onclick = () => closeChartModal();
     overlay.onclick = (ev) => {
         if(ev.target === overlay) closeChartModal();
@@ -771,58 +768,15 @@ function closeChartModal(){
 
 // ---------------- Mostrar Resumo + abrir popup ----------------
 function mostrarResumoGeral(){
-    const existente = document.getElementById("resumo-geral-box");
-
-    // 🔄 Se já existe → remover (toggle OFF)
+    // Toggle: se modal já existe, fecha; caso contrário abre
+    const existente = document.getElementById("chart-modal-overlay");
     if (existente) {
-        existente.remove();
-        // também fecho modal se aberto
         closeChartModal();
         return;
     }
-
-    // 🔄 Caso contrário → gerar (toggle ON)
-    const details = document.querySelectorAll("details");
-    let almoxCount = details.length;
-    let totalNotas = 0;
-    let totalPeso = 0;
-    let totalVolumes = 0;
-
-    details.forEach(det => {
-        const textoResumo = det.querySelector(".summary-resumo")?.innerText || "";
-        const partes = textoResumo.match(/Notas: (\d+).*Peso: ([\d.]+).*Volumes: (\d+)/);
-
-        if(partes){
-            totalNotas += parseInt(partes[1]);
-            totalPeso += parseFloat(partes[2]);
-            totalVolumes += parseInt(partes[3]);
-        }
-    });
-
-    const resumoHTML = `
-    <div id="resumo-geral-box" style="
-        background:#e3f2fd;
-        border:1px solid #90caf9;
-        padding:12px;
-        border-radius:10px;
-        margin-bottom:15px;
-        font-size:14px;
-        font-weight:600;
-        color:#0d47a1;
-    ">
-        📊 <strong>Resumo Geral</strong><br>
-        Almoxarifados exibidos: ${almoxCount}<br>
-        Total de Notas: ${totalNotas}<br>
-        Peso Total: ${totalPeso.toFixed(2)}<br>
-        Volumes Totais: ${totalVolumes}
-    </div>`;
-
-    document.getElementById("resultado").insertAdjacentHTML("afterbegin", resumoHTML);
-
-    // abre modal com chart usando os dados atuais (mesma filtragem)
-    openChartModal();
+    // abre modal com gráfico e resumo (resumo abaixo do gráfico — opção 2)
+    openChartModalWithSummary();
 }
-
 
 </script>
 </body>
