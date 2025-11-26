@@ -128,6 +128,9 @@ input[type="file"]::file-selector-button {
 
         <input type="number" id="diasCorte" placeholder="Dias de Corte" min="1">
 
+        <input type="month" id="filtroMesInicio" placeholder="Mês Inicial">
+        <input type="month" id="filtroMesFim" placeholder="Mês Final">
+
         <button onclick="baixarExcel()">💾 Excel</button>
         <button onclick="gerarRelatorioImpressao()">🖨️ Imprimir</button>
         <button onclick="toggleDetalhes()" id="btnToggle">⬆️ Expandir/Recolher Todos</button>
@@ -271,6 +274,39 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
         if(filtroAlmoxSelecionado && l["Almoxarifado"] !== filtroAlmoxSelecionado)
             return false;
 
+        // ----------------------------------------
+        // ⭐ FILTRO POR INTERVALO DE MESES — MESMO BLOCO
+        // ----------------------------------------
+        const mesInicioVal = document.getElementById("filtroMesInicio").value;
+        const mesFimVal    = document.getElementById("filtroMesFim").value;
+
+        let mesInicio = null, mesFim = null;
+
+        if (mesInicioVal) {
+            const [ano, mes] = mesInicioVal.split("-");
+            mesInicio = new Date(Number(ano), Number(mes)-1, 1);
+        }
+        if (mesFimVal) {
+            const [ano, mes] = mesFimVal.split("-");
+            mesFim = new Date(Number(ano), Number(mes), 0);
+        }
+
+        function maiorDataLinha(linha) {
+            const dE = linha["Data de Entrada da Nota"];
+            const dC = linha["Data de Check in"];
+            if (dE instanceof Date && dC instanceof Date) return dE > dC ? dE : dC;
+            if (dE instanceof Date) return dE;
+            if (dC instanceof Date) return dC;
+            return null;
+        }
+
+        if (mesInicio || mesFim) {
+            const md = maiorDataLinha(l);
+            if (!md) return false;
+            if (mesInicio && md < mesInicio) return false;
+            if (mesFim && md > mesFim) return false;
+        }
+
         const dEntrada = l["Data de Entrada da Nota"];
         const dCheckin = l["Data de Check in"];
 
@@ -349,6 +385,38 @@ function renderTabela(){
         if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox) return false;
         if(clientesSelecionados.length > 0 && !clientesSelecionados.includes(String(l["Cliente"]))) return false;
 
+        // ----------------------------------------
+        // ⭐ FILTRO POR INTERVALO DE MESES
+        // ----------------------------------------
+        const mesInicioVal = document.getElementById("filtroMesInicio").value;
+        const mesFimVal    = document.getElementById("filtroMesFim").value;
+
+        let mesInicio = null, mesFim = null;
+
+        if (mesInicioVal) {
+            const [ano, mes] = mesInicioVal.split("-");
+            mesInicio = new Date(Number(ano), Number(mes)-1, 1);
+        }
+        if (mesFimVal) {
+            const [ano, mes] = mesFimVal.split("-");
+            mesFim = new Date(Number(ano), Number(mes), 0);
+        }
+
+        function maiorDataLinha(linha) {
+            const dE = linha["Data de Entrada da Nota"];
+            const dC = linha["Data de Check in"];
+            if (dE instanceof Date && dC instanceof Date) return dE > dC ? dE : dC;
+            if (dE instanceof Date) return dE;
+            if (dC instanceof Date) return dC;
+            return null;
+        }
+
+        if (mesInicio || mesFim) {
+            const md = maiorDataLinha(l);
+            if (!md) return false;
+            if (mesInicio && md < mesInicio) return false;
+            if (mesFim && md > mesFim) return false;
+        }
 
         const dEntrada = l["Data de Entrada da Nota"];
         const dCheckin = l["Data de Check in"];
@@ -604,6 +672,39 @@ function getCurrentFilteredData(){
         // já existia
         if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox)
             return false;
+
+        // ----------------------------------------
+        // ⭐ FILTRO POR INTERVALO DE MESES — MESMO BLOCO
+        // ----------------------------------------
+        const mesInicioVal = document.getElementById("filtroMesInicio").value;
+        const mesFimVal    = document.getElementById("filtroMesFim").value;
+
+        let mesInicio = null, mesFim = null;
+
+        if (mesInicioVal) {
+            const [ano, mes] = mesInicioVal.split("-");
+            mesInicio = new Date(Number(ano), Number(mes)-1, 1);
+        }
+        if (mesFimVal) {
+            const [ano, mes] = mesFimVal.split("-");
+            mesFim = new Date(Number(ano), Number(mes), 0);
+        }
+
+        function maiorDataLinha(linha) {
+            const dE = linha["Data de Entrada da Nota"];
+            const dC = linha["Data de Check in"];
+            if (dE instanceof Date && dC instanceof Date) return dE > dC ? dE : dC;
+            if (dE instanceof Date) return dE;
+            if (dC instanceof Date) return dC;
+            return null;
+        }
+
+        if (mesInicio || mesFim) {
+            const md = maiorDataLinha(l);
+            if (!md) return false;
+            if (mesInicio && md < mesInicio) return false;
+            if (mesFim && md > mesFim) return false;
+        }
 
         // filtro por dias de corte
         const dEntrada = l["Data de Entrada da Nota"];
@@ -965,6 +1066,8 @@ $(document).ready(function() {
     });
 });
 
+document.getElementById("filtroMesInicio").onchange = renderTabela;
+document.getElementById("filtroMesFim").onchange = renderTabela;
 
 </script>
 </body>
