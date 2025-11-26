@@ -205,6 +205,16 @@ document.getElementById("fileInput").addEventListener("change", async function(e
     let df = XLSX.utils.sheet_to_json(sheet, { raw:true, dateNF:"dd/mm/yyyy" });
     df = df.filter(l => l["Numero OEF"] && String(l["Numero OEF"]).trim() !== "");
 
+    // 🔥 REMOVER DUPLICADOS (mesma Nota + Numero OEF)
+    const seen = new Set();
+    df = df.filter(linha => {
+        const chave = `${linha["Nota"]}__${linha["Numero OEF"]}`;
+        if (seen.has(chave)) return false; // já existe → descartar
+        seen.add(chave);
+        return true; // manter
+    });
+
+
     df.forEach(linha => {
         linha["Data de Entrada da Nota"] = parseDateLocal(linha["Data de Entrada da Nota"]);
         if (linha["Data de Entrada da Nota"] instanceof Date) {
@@ -384,7 +394,7 @@ function renderTabela(){
         const totalVolumes = grupo.reduce((s,l)=>s+(parseFloat(l["Volumes"])||0), 0);
 
         html += `<details><summary>📦 ${almox} — ${notas} notas</summary>`;
-        html += `<div class="summary-resumo">Resumo: Total Notas: ${notas} | Peso: ${totalPeso} | Volumes: ${totalVolumes}</div>`;
+        html += `<div class="summary-resumo">Resumo: Total Notas: ${notas} | Peso: ${totalPeso.toFixed(2)} | Volumes: ${Number(totalVolumes).toFixed(2)}</div>`;
         html += `<div class="tabela-scroll"><table><tr>`;
 
         colunasOrdenadas.forEach(c => {
