@@ -623,6 +623,33 @@ function buildSummaryText(filteredData){
         }
     });
 
+    // NOVO: distribuir por almoxarifado + range
+    resumo.porAlmoxRange = {};
+    const rangesKeys = Object.keys(rangeGroups);
+
+    filteredData.forEach(r => {
+        const alm = r["Almoxarifado"] || "Sem Almoxarifado";
+        const dias = r["Range de Dias"];
+
+        if(!resumo.porAlmoxRange[alm]) {
+            resumo.porAlmoxRange[alm] = {
+                "0–5 dias": 0,
+                "6–10 dias": 0,
+                "11–20 dias": 0,
+                "21+ dias": 0
+            };
+        }
+
+        if(!(dias === "" || dias === null || isNaN(dias))) {
+            for(const key in rangeGroups){
+                if(rangeGroups[key](dias)){
+                    resumo.porAlmoxRange[alm][key]++;
+                    break;
+                }
+            }
+        }
+    });
+
     return resumo;
 }
 
@@ -659,14 +686,16 @@ function openChartModalWithSummary(){
 
           <!-- RESUMO DETALHADO (ABAIXO DO GRÁFICO) -->
           <div class="modal-summary" id="modal-summary">
-            <h4>Resumo Geral</h4>
+            <h2>Resumo Geral</h2>
             <div id="resumo-geral-text"></div>
 
-            <h4>Resumo por Almoxarifado</h4>
+            <h2>Resumo por Almoxarifado</h2>
             <pre id="resumo-por-almox"></pre>
 
-            <h4>Resumo por Range de Dias</h4>
+            <h2>Total geral por Range de Dias</h2>
             <pre id="resumo-por-range"></pre>
+            <h2>Detalhamento por Range em Cada Almoxarifado</h2>
+            <pre id="resumo-por-almox-range"></pre>
           </div>
         </div>
       </div>
@@ -746,6 +775,17 @@ function openChartModalWithSummary(){
     const porRangeText = Object.keys(resumo.porRange).map(r => `${r}: ${resumo.porRange[r]} notas`).join("\n");
     document.getElementById("resumo-por-range").innerText = porRangeText || "—";
 
+    // NOVO — preencher resumo por almoxarifado + range
+    let txtAlmoxRange = "";
+    for (const alm in resumo.porAlmoxRange) {
+        txtAlmoxRange += `${alm}\n`;
+        const ranges = resumo.porAlmoxRange[alm];
+        txtAlmoxRange += `  0–5 dias:   ${ranges["0–5 dias"]}\n`;
+        txtAlmoxRange += `  6–10 dias:  ${ranges["6–10 dias"]}\n`;
+        txtAlmoxRange += `  11–20 dias: ${ranges["11–20 dias"]}\n`;
+        txtAlmoxRange += `  21+ dias:   ${ranges["21+ dias"]}\n\n`;
+    }
+    document.getElementById("resumo-por-almox-range").textContent = txtAlmoxRange;
     
 
     // evento de fechamento
