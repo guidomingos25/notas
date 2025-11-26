@@ -49,8 +49,9 @@ input[type="file"]::file-selector-button {
   z-index: 9999;
 }
 .modal {
-  width: 900px;
-  max-width: calc(100% - 40px);
+  width: 1200px;
+  max-width: 95vw;
+  max-height: 95vh;
   background: #fff;
   border-radius: 12px;
   padding: 18px;
@@ -92,7 +93,7 @@ input[type="file"]::file-selector-button {
 
 /* Permite scroll no conteúdo interno do modal */
 .modal-body {
-    max-height: 70vh;
+    max-height: 80vh;
     overflow-y: auto;
     padding-right: 6px;
 }
@@ -659,6 +660,11 @@ let currentChart = null;
 function openChartModalWithSummary(){
     const filtered = getCurrentFilteredData();
     const { almoxs, ranges, counts } = buildChartCounts(filtered);
+    // ⭐ Ajusta largura mínima por quantidade de barras
+    const minBarWidth = 60;
+    const totalBars = almoxs.length;
+    
+
 
     if(almoxs.length === 0){
         alert("Nenhum dado para exibir no gráfico (verifique filtros).");
@@ -681,7 +687,12 @@ function openChartModalWithSummary(){
           <button class="modal-close" id="chart-modal-close">Fechar</button>
         </div>
         <div class="modal-body">
-          <div style="height:420px;"><canvas id="resumoChart" style="width:100%;height:100%;"></canvas></div>
+        <div style="overflow-x:auto; width:100%; padding-bottom:10px;">
+            <div id="chart-container" style="min-width:1200px; height:500px;">
+                <canvas id="resumoChart"></canvas>
+            </div>
+        </div>
+
           <div class="chart-legend" id="chart-legend"></div>
 
           <!-- RESUMO DETALHADO (ABAIXO DO GRÁFICO) -->
@@ -702,6 +713,11 @@ function openChartModalWithSummary(){
     `;
 
     document.body.appendChild(overlay);
+
+    // só agora o elemento existe
+    document.querySelector("#chart-container").style.minWidth =
+        (totalBars * minBarWidth) + "px";
+
 
     // montar datasets com palette
     const palette = {
