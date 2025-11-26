@@ -385,9 +385,9 @@ function renderTabela(){
     });
 
     let html = "";
-    for(const almox in grupos){
+    Object.keys(grupos).sort().forEach(almox => {
         let grupo = [...grupos[almox]];
-        if(ordenacao.coluna) grupo = ordenarArray(grupo, ordenacao.coluna, ordenacao.asc);
+        if (ordenacao.coluna) grupo = ordenarArray(grupo, ordenacao.coluna, ordenacao.asc);
 
         const notas = grupo.length;
         const totalPeso = grupo.reduce((s,l)=>s+(parseFloat(l["Peso"])||0), 0);
@@ -396,7 +396,7 @@ function renderTabela(){
         html += `<details><summary>📦 ${almox} — ${notas} notas</summary>`;
         html += `<div class="summary-resumo">Resumo: Total Notas: ${notas} | Peso: ${totalPeso.toFixed(2)} | Volumes: ${Number(totalVolumes).toFixed(2)}</div>`;
         html += `<div class="tabela-scroll"><table><tr>`;
-
+        
         colunasOrdenadas.forEach(c => {
             html += `<th onclick="clicarCabecalho('${c}')">${c}${ordenacao.coluna===c ? (ordenacao.asc?' 🔼':' 🔽') : ''}</th>`;
         });
@@ -413,7 +413,8 @@ function renderTabela(){
         });
 
         html += `</table></div></details><br>`;
-    }
+    });
+
 
     document.getElementById("resultado").innerHTML = html;
 
