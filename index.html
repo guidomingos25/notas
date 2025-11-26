@@ -766,6 +766,7 @@ function openChartModalWithSummary(){
       <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-header">
           <div class="modal-title">Resumo Geral — Gráfico por Almoxarifado / Range de Dias</div>
+          <button class="modal-close" id="print-resumo-btn">🖨️ Imprimir Relatório Geral</button>
           <button class="modal-close" id="chart-modal-close">Fechar</button>
         </div>
         <div class="modal-body">
@@ -795,6 +796,8 @@ function openChartModalWithSummary(){
     `;
 
     document.body.appendChild(overlay);
+
+    document.getElementById("print-resumo-btn").onclick = imprimirResumoGeral;
 
     // só agora o elemento existe
     document.querySelector("#chart-container").style.minWidth =
@@ -898,6 +901,34 @@ function openChartModalWithSummary(){
         if(ev.target === overlay) closeChartModal();
     };
 }
+
+function imprimirResumoGeral() {
+    const areaResumo = document.getElementById("modal-summary").innerHTML;
+
+    const htmlPrint = `
+        <html>
+        <head>
+            <title>Resumo Geral</title>
+            <style>
+                body { font-family: Arial; padding: 20px; }
+                h2 { margin-top: 20px; }
+                pre { background: #f0f0f0; padding: 10px; border-radius: 6px; }
+            </style>
+        </head>
+        <body>
+            <h1>Resumo Geral — Relatório</h1>
+            ${areaResumo}
+        </body>
+        </html>
+    `;
+
+    const w = window.open();
+    w.document.write(htmlPrint);
+    w.document.close();
+    w.focus();
+    w.print();
+}
+
 
 function closeChartModal(){
     const overlay = document.getElementById("chart-modal-overlay");
