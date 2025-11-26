@@ -6,6 +6,21 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
+<!-- SELECT2 (para multi seleção + campo de busca) -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<style>
+/* Ajuste mínimo para não alterar seu design */
+.select2-container .select2-selection--multiple {
+    min-height: 38px !important;
+    border-radius: 8px !important;
+    border: 1px solid #cfd8dc !important;
+}
+</style>
+
+
 <!-- Chart.js CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
@@ -109,9 +124,9 @@ input[type="file"]::file-selector-button {
 
         <input type="file" id="fileInput" accept=".xlsx">
 
-        <select id="filtroAlmox"><option value="">Almoxarifado</option></select>
+        <select id="filtroCliente" multiple><option value="">Cliente</option></select>
 
-        <select id="filtroRange"><option value="">Range de Dias</option></select>
+        <select id="filtroAlmox"><option value="">Almoxarifado</option></select>
 
         <input type="number" id="diasCorte" placeholder="Dias de Corte" min="1">
 
@@ -227,10 +242,8 @@ document.getElementById("fileInput").addEventListener("change", async function(e
 // ------------------- FILTROS -------------------
 function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
     const filtroAlmox = document.getElementById("filtroAlmox");
-    const filtroRange = document.getElementById("filtroRange");
 
-    filtroAlmox.innerHTML = `<option value="">Filtrar por Almoxarifado</option>`;
-    filtroRange.innerHTML = `<option value="">Filtrar por Range de Dias</option>`;
+    filtroAlmox.innerHTML = `<option value="">Almoxarifado</option>`;
 
     const val = document.getElementById("diasCorte").value;
     const corteDias = val === "" ? null : parseInt(val);
@@ -239,9 +252,16 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
     const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime()) : null;
     if(limite) limite.setDate(hoje.getDate() - corteDias);
 
+    const clientesSelecionados = $('#filtroCliente').val() || [];
+
     const dfFiltrado = df.filter(l => {
-        if(filtroAlmoxSelecionado && l["Almoxarifado"] !== filtroAlmoxSelecionado) return false;
-        if(filtroRangeSelecionado && l["Range de Dias"] !== filtroRangeSelecionado) return false;
+
+        if (clientesSelecionados.length > 0 &&
+            !clientesSelecionados.includes(String(l["Cliente"])))
+            return false;
+
+        if(filtroAlmoxSelecionado && l["Almoxarifado"] !== filtroAlmoxSelecionado)
+            return false;
 
         const dEntrada = l["Data de Entrada da Nota"];
         const dCheckin = l["Data de Check in"];
@@ -257,31 +277,58 @@ function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
             if (!maiorData) return false;
             return maiorData.getTime() <= limite.getTime();
         }
+
         return true;
     });
 
+
     const almoxSet = new Set(dfFiltrado.map(l => l["Almoxarifado"]).filter(a => a));
-    const rangeSet = new Set(dfFiltrado.map(l => l["Range de Dias"]).filter(r => r));
 
     [...almoxSet].sort().forEach(a => {
         filtroAlmox.innerHTML += `<option value="${a}" ${filtroAlmoxSelecionado===a?'selected':''}>${a}</option>`;
     });
 
-    [...rangeSet].sort((x,y)=>x-y).forEach(r => {
-        filtroRange.innerHTML += `<option value="${r}" ${filtroRangeSelecionado===String(r)?'selected':''}>${r}</option>`;
+    filtroAlmox.onchange = renderTabela;
+    document.getElementById("diasCorte").onchange = renderTabela;
+
+    // ------- CLIENTES (NOVA PARTE) --------
+    const filtroCliente = document.getElementById("filtroCliente");
+
+    // captura seleção atual (se houver) para preservar
+    const prevSelected = $('#filtroCliente').val() || [];
+
+    // limpa
+    $('#filtroCliente').empty();
+
+    // Lista deve ser SEMPRE baseada no dfGlobal — nunca no dfFiltrado!
+    const clientesSet = new Set(dfGlobal.map(l => l["Cliente"]).filter(c => c));
+
+
+    [...clientesSet].sort().forEach(c => {
+        // cria option via jQuery para evitar problemas com select2
+        const option = new Option(c, c, false, prevSelected.includes(String(c)));
+        $('#filtroCliente').append(option);
     });
 
-    filtroAlmox.onchange = renderTabela;
-    filtroRange.onchange = renderTabela;
-    document.getElementById("diasCorte").onchange = renderTabela;
+    // se estiver usando Select2, informar que o conteúdo mudou
+    if ($('#filtroCliente').data('select2')) {
+        $('#filtroCliente').trigger('change.select2');
+    } else {
+        // se Select2 ainda não inicializado, manter onchange normal
+        $('#filtroCliente').on('change', renderTabela);
+    }
+
+
 }
 
 // ------------------- RENDER TABELA -------------------
 function renderTabela(){
     const filtroAlmox = document.getElementById("filtroAlmox").value;
-    const filtroRange = document.getElementById("filtroRange").value;
+    const clientesSelecionados = $('#filtroCliente').val() || [];
 
-    preencherFiltros(dfGlobal, filtroAlmox, filtroRange);
+
+    preencherFiltros(dfGlobal, filtroAlmox, null);
+
 
     const val = document.getElementById("diasCorte").value;
     const corteDias = val === "" ? null : parseInt(val);
@@ -292,7 +339,8 @@ function renderTabela(){
 
     const dfFiltrado = dfGlobal.filter(l => {
         if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox) return false;
-        if(filtroRange && l["Range de Dias"] !== filtroRange) return false;
+        if(clientesSelecionados.length > 0 && !clientesSelecionados.includes(String(l["Cliente"]))) return false;
+
 
         const dEntrada = l["Data de Entrada da Nota"];
         const dCheckin = l["Data de Check in"];
@@ -523,18 +571,32 @@ document.addEventListener("toggle", function (e) {
 // Retorna os dados atualmente exibidos (mesma lógica de filtro do renderTabela)
 function getCurrentFilteredData(){
     const filtroAlmox = document.getElementById("filtroAlmox").value;
-    const filtroRange = document.getElementById("filtroRange").value;
     const val = document.getElementById("diasCorte").value;
     const corteDias = val === "" ? null : parseInt(val);
 
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime()) : null;
+    const clientesSelecionados = $('#filtroCliente').val() || [];
+
+    const hoje = new Date(); 
+    hoje.setHours(0,0,0,0);
+
+    const limite = (corteDias !== null && !isNaN(corteDias))
+        ? new Date(hoje.getTime())
+        : null;
+
     if(limite) limite.setDate(hoje.getDate() - corteDias);
 
     const filtered = dfGlobal.filter(l => {
-        if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox) return false;
-        if(filtroRange && l["Range de Dias"] !== filtroRange) return false;
 
+        // ✅ FILTRO POR CLIENTE — FALTAVA AQUI
+        if(clientesSelecionados.length > 0 &&
+           !clientesSelecionados.includes(String(l["Cliente"])))
+            return false;
+
+        // já existia
+        if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox)
+            return false;
+
+        // filtro por dias de corte
         const dEntrada = l["Data de Entrada da Nota"];
         const dCheckin = l["Data de Check in"];
 
@@ -549,11 +611,13 @@ function getCurrentFilteredData(){
             if (!maiorData) return false;
             return maiorData.getTime() <= limite.getTime();
         }
+
         return true;
     });
 
     return filtered;
 }
+
 
 // Constrói a matriz de contagens: almoxarifado x range
 function buildChartCounts(filteredData){
@@ -591,9 +655,11 @@ function buildSummaryText(filteredData){
         totalNotas: 0,
         totalPeso: 0,
         totalVolumes: 0,
-        porAlmox: {},   // almox -> {notas, peso, volumes}
+        totalValor: 0,
+        porAlmox: {},
         porRange: { "0–5 dias":0, "6–10 dias":0, "11–20 dias":0, "21+ dias":0 }
     };
+
 
     const rangeGroups = {
         "0–5 dias":   d => d >= 0 && d <= 5,
@@ -606,12 +672,16 @@ function buildSummaryText(filteredData){
         resumo.totalNotas += 1;
         resumo.totalPeso += parseFloat(r["Peso"]) || 0;
         resumo.totalVolumes += parseFloat(r["Volumes"]) || 0;
+        resumo.totalValor += parseFloat(r["Valor Nota"]) || 0;
+
 
         const alm = r["Almoxarifado"] || "Sem Almoxarifado";
         if(!resumo.porAlmox[alm]) resumo.porAlmox[alm] = { notas:0, peso:0, volumes:0 };
         resumo.porAlmox[alm].notas += 1;
         resumo.porAlmox[alm].peso += parseFloat(r["Peso"]) || 0;
         resumo.porAlmox[alm].volumes += parseFloat(r["Volumes"]) || 0;
+        resumo.porAlmox[alm].valor = (resumo.porAlmox[alm].valor || 0) + (parseFloat(r["Valor Nota"]) || 0); 
+
 
         const dias = r["Range de Dias"];
         if(!(dias === "" || dias === null || isNaN(dias))){
@@ -658,8 +728,11 @@ let currentChart = null;
 
 // Cria e abre modal + chart + resumo (resumo ficará abaixo do gráfico conforme pedido — opção 2)
 function openChartModalWithSummary(){
-    const filtered = getCurrentFilteredData();
-    const { almoxs, ranges, counts } = buildChartCounts(filtered);
+    const filtered = getCurrentFilteredData(); // mantém para segurança
+    // usar exatamente a mesma filtragem da tabela
+    const tabelaFiltrada = getCurrentFilteredData();
+
+    const { almoxs, ranges, counts } = buildChartCounts(tabelaFiltrada);
     // ⭐ Ajusta largura mínima por quantidade de barras
     const minBarWidth = 60;
     const totalBars = almoxs.length;
@@ -672,7 +745,7 @@ function openChartModalWithSummary(){
     }
 
     // Build summary text structure
-    const resumo = buildSummaryText(filtered);
+    const resumo = buildSummaryText(tabelaFiltrada);
 
 
     // montar modal
@@ -703,7 +776,7 @@ function openChartModalWithSummary(){
             <h2>Resumo por Almoxarifado</h2>
             <pre id="resumo-por-almox"></pre>
 
-            <h2>Total geral por Range de Dias</h2>
+            <h2>Total Geral por Range de Dias</h2>
             <pre id="resumo-por-range"></pre>
             <h2>Detalhamento por Range em Cada Almoxarifado</h2>
             <pre id="resumo-por-almox-range"></pre>
@@ -777,14 +850,16 @@ function openChartModalWithSummary(){
 
     // preencher resumo detalhado (ABAIXO DO GRÁFICO)
     document.getElementById("resumo-geral-text").innerHTML =
-        `Almoxarifados exibidos: <strong>${Object.keys(resumo.porAlmox).length}</strong> &nbsp;|&nbsp; ` +
-        `Total de Notas: <strong>${resumo.totalNotas}</strong> &nbsp;|&nbsp; ` +
-        `Peso Total: <strong>${resumo.totalPeso.toFixed(2)}</strong> &nbsp;|&nbsp; ` +
-        `Volumes Totais: <strong>${resumo.totalVolumes}</strong>`;
+        `Almoxarifados exibidos: <strong>${Object.keys(resumo.porAlmox).length}</strong> &nbsp;|&nbsp; 
+        Total de Notas: <strong>${resumo.totalNotas}</strong> &nbsp;|&nbsp; 
+        Peso Total: <strong>${resumo.totalPeso.toFixed(2)}</strong> &nbsp;|&nbsp; 
+        Volumes Totais: <strong>${resumo.totalVolumes}</strong>
+        &nbsp;|&nbsp; Valor Total: <strong>R$ ${resumo.totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong>`;
+
 
     const porAlmoxText = Object.keys(resumo.porAlmox).sort().map(a => {
         const v = resumo.porAlmox[a];
-        return `${a} — ${v.notas} notas | ${v.peso.toFixed(2)} kg | ${v.volumes} volumes`;
+        return `${a} — ${v.notas} notas | ${v.peso.toFixed(2)} kg | ${v.volumes} volumes | Valor Total: R$ ${ (v.valor || 0).toLocaleString('pt-BR',{minimumFractionDigits:2}) }` ;
     }).join("\n");
     document.getElementById("resumo-por-almox").innerText = porAlmoxText || "—";
 
@@ -793,15 +868,19 @@ function openChartModalWithSummary(){
 
     // NOVO — preencher resumo por almoxarifado + range
     let txtAlmoxRange = "";
-    for (const alm in resumo.porAlmoxRange) {
+    const almoxOrdenados = Object.keys(resumo.porAlmoxRange).sort();
+
+    almoxOrdenados.forEach(alm => {
         txtAlmoxRange += `${alm}\n`;
         const ranges = resumo.porAlmoxRange[alm];
         txtAlmoxRange += `  0–5 dias:   ${ranges["0–5 dias"]}\n`;
         txtAlmoxRange += `  6–10 dias:  ${ranges["6–10 dias"]}\n`;
         txtAlmoxRange += `  11–20 dias: ${ranges["11–20 dias"]}\n`;
         txtAlmoxRange += `  21+ dias:   ${ranges["21+ dias"]}\n\n`;
-    }
+    });
+
     document.getElementById("resumo-por-almox-range").textContent = txtAlmoxRange;
+
     
 
     // evento de fechamento
@@ -833,6 +912,19 @@ function mostrarResumoGeral(){
     // abre modal com gráfico e resumo (resumo abaixo do gráfico — opção 2)
     openChartModalWithSummary();
 }
+
+$(document).ready(function() {
+    $('#filtroCliente').select2({
+        placeholder: "Cliente",
+        allowClear: true,
+        width: 'resolve'
+    });
+
+    $('#filtroCliente').on('change', function() {
+        renderTabela();
+    });
+});
+
 
 </script>
 </body>
