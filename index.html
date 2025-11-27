@@ -155,7 +155,7 @@ const COLUNAS_DATA = [
 const COLUNAS_EXCEL = [
     "Data de Check in","Data de Entrada da Nota","Nota","Numero OEF","Range de Dias",
     "Fornecedor","Almoxarifado","CTE","ONU","End. WMS","Mercadoria","Peso","Volumes",
-    "Data Inventario","Ultimo Inventario Filial","Status no Inventario"
+    "Valor Nota","Data Inventario","Ultimo Inventario Filial","Status no Inventario"
 ];
 
 function formatDateBR(date){
@@ -540,7 +540,15 @@ function baixarExcel(){
                 COLUNAS_EXCEL.forEach(col => {
                     const index = Array.from(table.querySelectorAll("th"))
                         .findIndex(th => th.innerText === col);
-                    obj[col] = index >= 0 ? rowData[index] : "";
+                    let v = index >= 0 ? rowData[index] : "";
+
+                    if (col === "Valor Nota") {
+                        const n = parseFloat(v);
+                        v = isNaN(n) ? null : Number(n.toFixed(2));  // número real com 2 casas decimais
+                    }
+
+                    obj[col] = v;
+
                 });
                 data.push(obj);
             });
