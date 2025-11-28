@@ -3,13 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <title>Relatório – Almoxarifado + Datas</title>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
+document.getElementById("diasCorte").addEventListener("keyup", function(e){
+    if(e.key === "Enter"){ renderTabela(); }
+});
+document.getElementById("diasCorte").addEventListener("change", renderTabela);
+
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
 <!-- SELECT2 (para multi seleção + campo de busca) -->
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js">
+document.getElementById("diasCorte").addEventListener("keyup", function(e){
+    if(e.key === "Enter"){ renderTabela(); }
+});
+document.getElementById("diasCorte").addEventListener("change", renderTabela);
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js">
+document.getElementById("diasCorte").addEventListener("keyup", function(e){
+    if(e.key === "Enter"){ renderTabela(); }
+});
+document.getElementById("diasCorte").addEventListener("change", renderTabela);
+
+</script>
 
 <style>
 /* Ajuste mínimo para não alterar seu design */
@@ -22,8 +40,20 @@
 
 
 <!-- Chart.js CDN -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js">
+document.getElementById("diasCorte").addEventListener("keyup", function(e){
+    if(e.key === "Enter"){ renderTabela(); }
+});
+document.getElementById("diasCorte").addEventListener("change", renderTabela);
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels">
+document.getElementById("diasCorte").addEventListener("keyup", function(e){
+    if(e.key === "Enter"){ renderTabela(); }
+});
+document.getElementById("diasCorte").addEventListener("change", renderTabela);
+
+</script>
 
 <style>
 body { font-family: 'Inter', sans-serif; background: #f4f6f8; margin:0; padding:25px; font-size:14px; color:#333; transition: all 0.3s; }
@@ -124,7 +154,8 @@ input[type="file"]::file-selector-button {
 
         <select id="filtroCliente" multiple><option value="">Cliente</option></select>
 
-        <select id="filtroAlmox"><option value="">Almoxarifado</option></select>
+        <select id="filtroAlmox" multiple><option value="">Almoxarifado</option></select>
+
 
         <input type="number" id="diasCorte" placeholder="Dias de Corte" min="1">
 
@@ -165,9 +196,6 @@ function formatDateBR(date){
     return `${d}/${m}/${date.getFullYear()}`;
 }
 
-/*
-  parseDateLocal aprimorada:
-*/
 function parseDateLocal(val){
     if(val === null || val === undefined) return null;
     if(val instanceof Date && !isNaN(val)) return new Date(val.getFullYear(), val.getMonth(), val.getDate());
@@ -251,243 +279,170 @@ document.getElementById("fileInput").addEventListener("change", async function(e
 });
 
 // ------------------- FILTROS -------------------
-function preencherFiltros(df, filtroAlmoxSelecionado, filtroRangeSelecionado){
-    const filtroAlmox = document.getElementById("filtroAlmox");
 
-    filtroAlmox.innerHTML = `<option value="">Almoxarifado</option>`;
-
-    const val = document.getElementById("diasCorte").value;
-    const corteDias = val === "" ? null : parseInt(val);
-
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime()) : null;
-    if(limite) limite.setDate(hoje.getDate() - corteDias);
+// centraliza lógica de filtragem para garantir consistência entre tabela e resumo
+function applyFilters(df, options = { ignoreAlmox: false, ignoreDias: false }) {
+    if(!df || !Array.isArray(df)) return [];
 
     const clientesSelecionados = $('#filtroCliente').val() || [];
+    const almoxSelecionados = $('#filtroAlmox').val() || [];
 
-    const dfFiltrado = df.filter(l => {
+    const diasVal = document.getElementById("diasCorte").value;
+    const corteDias = diasVal === "" ? null : parseInt(diasVal);
 
-        if (clientesSelecionados.length > 0 &&
-            !clientesSelecionados.includes(String(l["Cliente"])))
-            return false;
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
 
-        if(filtroAlmoxSelecionado && l["Almoxarifado"] !== filtroAlmoxSelecionado)
-            return false;
+    const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime() - corteDias * 86400000) : null;
 
-        // ----------------------------------------
-        // ⭐ FILTRO POR INTERVALO DE MESES — MESMO BLOCO
-        // ----------------------------------------
-        const mesInicioVal = document.getElementById("filtroMesInicio").value;
-        const mesFimVal    = document.getElementById("filtroMesFim").value;
+    const mesInicioVal = document.getElementById("filtroMesInicio").value;
+    const mesFimVal    = document.getElementById("filtroMesFim").value;
 
-        let mesInicio = null, mesFim = null;
+    let mesInicio = null, mesFim = null;
 
-        if (mesInicioVal) {
-            const [ano, mes] = mesInicioVal.split("-");
-            mesInicio = new Date(Number(ano), Number(mes)-1, 1);
-        }
-        if (mesFimVal) {
-            const [ano, mes] = mesFimVal.split("-");
-            mesFim = new Date(Number(ano), Number(mes), 0);
-        }
-
-        function maiorDataLinha(linha) {
-            const dE = linha["Data de Entrada da Nota"];
-            const dC = linha["Data de Check in"];
-            if (dE instanceof Date && dC instanceof Date) return dE > dC ? dE : dC;
-            if (dE instanceof Date) return dE;
-            if (dC instanceof Date) return dC;
-            return null;
-        }
-
-        if (mesInicio || mesFim) {
-            const md = maiorDataLinha(l);
-            if (!md) return false;
-            if (mesInicio && md < mesInicio) return false;
-            if (mesFim && md > mesFim) return false;
-        }
-
-        const dEntrada = l["Data de Entrada da Nota"];
-        const dCheckin = l["Data de Check in"];
-
-        if (corteDias !== null && limite) {
-            const maiorData =
-                (dEntrada instanceof Date && !isNaN(dEntrada) &&
-                dCheckin instanceof Date && !isNaN(dCheckin))
-                    ? (dEntrada > dCheckin ? dEntrada : dCheckin)
-                    : (dEntrada instanceof Date && !isNaN(dEntrada) ? dEntrada :
-                    dCheckin instanceof Date && !isNaN(dCheckin) ? dCheckin : null);
-
-            if (!maiorData) return false;
-            return maiorData.getTime() <= limite.getTime();
-        }
-
-        return true;
-    });
-
-
-    const almoxSet = new Set(dfFiltrado.map(l => l["Almoxarifado"]).filter(a => a));
-
-    [...almoxSet].sort().forEach(a => {
-        filtroAlmox.innerHTML += `<option value="${a}" ${filtroAlmoxSelecionado===a?'selected':''}>${a}</option>`;
-    });
-
-    filtroAlmox.onchange = renderTabela;
-    document.getElementById("diasCorte").onchange = renderTabela;
-
-    // ------- CLIENTES (NOVA PARTE) --------
-    const filtroCliente = document.getElementById("filtroCliente");
-
-    // captura seleção atual (se houver) para preservar
-    const prevSelected = $('#filtroCliente').val() || [];
-
-    // limpa
-    $('#filtroCliente').empty();
-
-    // Lista deve ser SEMPRE baseada no dfGlobal — nunca no dfFiltrado!
-    const clientesSet = new Set(dfGlobal.map(l => l["Cliente"]).filter(c => c));
-
-
-    [...clientesSet].sort().forEach(c => {
-        // cria option via jQuery para evitar problemas com select2
-        const option = new Option(c, c, false, prevSelected.includes(String(c)));
-        $('#filtroCliente').append(option);
-    });
-
-    // se estiver usando Select2, informar que o conteúdo mudou
-    if ($('#filtroCliente').data('select2')) {
-        $('#filtroCliente').trigger('change.select2');
-    } else {
-        // se Select2 ainda não inicializado, manter onchange normal
-        $('#filtroCliente').on('change', renderTabela);
+    if (mesInicioVal) {
+        const [ano, mes] = mesInicioVal.split("-");
+        mesInicio = new Date(Number(ano), Number(mes)-1, 1);
+    }
+    if (mesFimVal) {
+        const [ano, mes] = mesFimVal.split("-");
+        mesFim = new Date(Number(ano), Number(mes), 0);
     }
 
+    function maiorDataLinha(linha) {
+        const dE = linha["Data de Entrada da Nota"];
+        const dC = linha["Data de Check in"];
+        if (dE instanceof Date && dC instanceof Date) return dE > dC ? dE : dC;
+        if (dE instanceof Date) return dE;
+        if (dC instanceof Date) return dC;
+        return null;
+    }
 
+    return df.filter(l => {
+        // Cliente
+        if (clientesSelecionados.length > 0 && !clientesSelecionados.includes(String(l["Cliente"]))) return false;
+
+        // Almoxarifado (quando não estamos ignorando esse filtro)
+        if (!options.ignoreAlmox && almoxSelecionados.length > 0 && !almoxSelecionados.includes(String(l["Almoxarifado"]))) return false;
+
+        // Meses
+        const md = maiorDataLinha(l);
+        if (mesInicio && (!md || md < mesInicio)) return false;
+        if (mesFim    && (!md || md > mesFim))    return false;
+
+        // Corte por dias
+        if (!options.ignoreDias && corteDias !== null && limite) {
+            if (!md) return false;
+            if (md.getTime() > limite.getTime()) return false;
+        }
+        return true;
+    });
+}
+
+function preencherFiltros(df) {
+
+    // preservar seleções anteriores
+    const prevClientes = $('#filtroCliente').val() || [];
+    const prevAlmox = $('#filtroAlmox').val() || [];
+
+    // 1) Clientes - sempre com base no dfGlobal
+    $('#filtroCliente').empty();
+    const clientesSet = new Set(dfGlobal.map(l => l["Cliente"]).filter(c => c));
+    [...clientesSet].sort().forEach(c => {
+        const opt = new Option(c, c, false, prevClientes.includes(String(c)));
+        $('#filtroCliente').append(opt);
+    });
+    if ($('#filtroCliente').data('select2')) $('#filtroCliente').trigger('change.select2');
+
+    // 2) Almoxarifados - construir sobre dfFiltradoBase (aplica filtros exceto almox)
+    const dfFiltradoBase = applyFilters(dfGlobal, { ignoreAlmox: true, ignoreDias: true });
+
+    $('#filtroAlmox').empty();
+    const almoxSet = new Set(dfFiltradoBase.map(l => l["Almoxarifado"]).filter(a => a));
+    [...almoxSet].sort().forEach(a => {
+        const opt = new Option(a, a, false, prevAlmox.includes(String(a)));
+        $('#filtroAlmox').append(opt);
+    });
+    if ($('#filtroAlmox').data('select2')) $('#filtroAlmox').trigger('change.select2');
 }
 
 // ------------------- RENDER TABELA -------------------
 function renderTabela(){
-    const filtroAlmox = document.getElementById("filtroAlmox").value;
-    const clientesSelecionados = $('#filtroCliente').val() || [];
 
+    // Atualiza filtros e opções disponíveis
+    preencherFiltros(dfGlobal);
 
-    preencherFiltros(dfGlobal, filtroAlmox, null);
-
-
-    const val = document.getElementById("diasCorte").value;
-    const corteDias = val === "" ? null : parseInt(val);
-
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const limite = (corteDias !== null && !isNaN(corteDias)) ? new Date(hoje.getTime()) : null;
-    if(limite) limite.setDate(hoje.getDate() - corteDias);
-
-    const dfFiltrado = dfGlobal.filter(l => {
-        if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox) return false;
-        if(clientesSelecionados.length > 0 && !clientesSelecionados.includes(String(l["Cliente"]))) return false;
-
-        // ----------------------------------------
-        // ⭐ FILTRO POR INTERVALO DE MESES
-        // ----------------------------------------
-        const mesInicioVal = document.getElementById("filtroMesInicio").value;
-        const mesFimVal    = document.getElementById("filtroMesFim").value;
-
-        let mesInicio = null, mesFim = null;
-
-        if (mesInicioVal) {
-            const [ano, mes] = mesInicioVal.split("-");
-            mesInicio = new Date(Number(ano), Number(mes)-1, 1);
-        }
-        if (mesFimVal) {
-            const [ano, mes] = mesFimVal.split("-");
-            mesFim = new Date(Number(ano), Number(mes), 0);
-        }
-
-        function maiorDataLinha(linha) {
-            const dE = linha["Data de Entrada da Nota"];
-            const dC = linha["Data de Check in"];
-            if (dE instanceof Date && dC instanceof Date) return dE > dC ? dE : dC;
-            if (dE instanceof Date) return dE;
-            if (dC instanceof Date) return dC;
-            return null;
-        }
-
-        if (mesInicio || mesFim) {
-            const md = maiorDataLinha(l);
-            if (!md) return false;
-            if (mesInicio && md < mesInicio) return false;
-            if (mesFim && md > mesFim) return false;
-        }
-
-        const dEntrada = l["Data de Entrada da Nota"];
-        const dCheckin = l["Data de Check in"];
-
-        if (corteDias !== null && limite) {
-            const maiorData =
-                (dEntrada instanceof Date && !isNaN(dEntrada) &&
-                dCheckin instanceof Date && !isNaN(dCheckin))
-                    ? (dEntrada > dCheckin ? dEntrada : dCheckin)
-                    : (dEntrada instanceof Date && !isNaN(dEntrada) ? dEntrada :
-                    dCheckin instanceof Date && !isNaN(dCheckin) ? dCheckin : null);
-
-            if (!maiorData) return false;
-            return maiorData.getTime() <= limite.getTime();
-        }
-        return true;
-    });
-
-    const todasColunas = Array.from(new Set(dfGlobal.flatMap(obj => Object.keys(obj))));
-    const colunasOrdenadas = [
-        "Almoxarifado","Range de Dias","Nota","Data de Entrada da Nota","Data de Check in",
-        ...todasColunas.filter(c => ![
-            "Almoxarifado","Range de Dias","Nota","Data de Entrada da Nota","Data de Check in"
-        ].includes(c))
-    ];
+    // usa a função centralizada para obter os dados que devem aparecer
+    const dfFiltrado = applyFilters(dfGlobal);
 
     const grupos = {};
     dfFiltrado.forEach(l => {
         const key = l["Almoxarifado"] || "Sem Almoxarifado";
-        if(!grupos[key]) grupos[key] = [];
+        if (!grupos[key]) grupos[key] = [];
         grupos[key].push(l);
     });
 
+    const todasColunas = Array.from(new Set(dfGlobal.flatMap(o => Object.keys(o))));
+
+    const colunasOrdenadas = [
+        "Almoxarifado","Range de Dias","Nota","Data de Entrada da Nota","Data de Check in",
+        ...todasColunas.filter(c => ![
+            "Almoxarifado","Range de Dias","Nota",
+            "Data de Entrada da Nota","Data de Check in"
+        ].includes(c))
+    ];
+
     let html = "";
+
     Object.keys(grupos).sort().forEach(almox => {
-        let grupo = [...grupos[almox]];
-        if (ordenacao.coluna) grupo = ordenarArray(grupo, ordenacao.coluna, ordenacao.asc);
+
+        let grupo = grupos[almox];
+
+        if (ordenacao.coluna) {
+            grupo = ordenarArray(grupo, ordenacao.coluna, ordenacao.asc);
+        }
 
         const notas = grupo.length;
-        const totalPeso = grupo.reduce((s,l)=>s+(parseFloat(l["Peso"])||0), 0);
-        const totalVolumes = grupo.reduce((s,l)=>s+(parseFloat(l["Volumes"])||0), 0);
+        const peso = grupo.reduce((s,l)=> s + (parseFloat(l["Peso"])||0), 0);
+        const vols = grupo.reduce((s,l)=> s + (parseFloat(l["Volumes"])||0), 0);
 
-        html += `<details><summary>📦 ${almox} — ${notas} notas</summary>`;
-        html += `<div class="summary-resumo">Resumo: Total Notas: ${notas} | Peso: ${totalPeso.toFixed(2)} | Volumes: ${Number(totalVolumes).toFixed(2)}</div>`;
-        html += `<div class="tabela-scroll"><table><tr>`;
-        
-        colunasOrdenadas.forEach(c => {
-            html += `<th onclick="clicarCabecalho('${c}')">${c}${ordenacao.coluna===c ? (ordenacao.asc?' 🔼':' 🔽') : ''}</th>`;
-        });
+        html += `
+            <details open>
+                <summary>📦 ${almox} — ${notas} notas</summary>
+                <div class="summary-resumo">
+                    Total Notas: ${notas} | 
+                    Peso: ${peso.toFixed(2)} | 
+                    Volumes: ${vols.toFixed(2)}
+                </div>
 
-        html += `</tr>`;
+                <div class="tabela-scroll">
+                    <table>
+                        <tr>
+                            ${colunasOrdenadas.map(c =>
+                                `<th onclick="clicarCabecalho('${c}')">${c}${ordenacao.coluna===c ? (ordenacao.asc?' 🔼':' 🔽') : ''}</th>`
+                            ).join("")}
+                        </tr>
 
-        grupo.forEach(l => {
-            html += "<tr>" + colunasOrdenadas.map(c=>{
-                const val = l[c];
-                return COLUNAS_DATA.includes(c)
-                    ? `<td>${formatDateBR(val)}</td>`
-                    : `<td>${val ?? ""}</td>`;
-            }).join("") + "</tr>";
-        });
-
-        html += `</table></div></details><br>`;
+                        ${grupo.map(l => `
+                            <tr>
+                                ${colunasOrdenadas.map(c => {
+                                    const val = l[c];
+                                    return COLUNAS_DATA.includes(c)
+                                        ? `<td>${formatDateBR(val)}</td>`
+                                        : `<td>${val ?? ""}</td>`;
+                                }).join("")}
+                            </tr>
+                        `).join("")}
+                    </table>
+                </div>
+            </details><br>
+        `;
     });
-
 
     document.getElementById("resultado").innerHTML = html;
 
-    // manter comportamento: abrir todos
-    document.querySelectorAll("details").forEach(d => d.open = true);
     atualizarBotaoToggle();
 }
+
 
 function ordenarArray(arr, coluna, asc = true){
     return arr.sort((a,b)=>{
@@ -653,89 +608,10 @@ document.addEventListener("toggle", function (e) {
 ====================================================
 */
 
-// Retorna os dados atualmente exibidos (mesma lógica de filtro do renderTabela)
+// Retorna os dados atualmente exibidos (usa a mesma lógica de renderTabela)
 function getCurrentFilteredData(){
-    const filtroAlmox = document.getElementById("filtroAlmox").value;
-    const val = document.getElementById("diasCorte").value;
-    const corteDias = val === "" ? null : parseInt(val);
-
-    const clientesSelecionados = $('#filtroCliente').val() || [];
-
-    const hoje = new Date(); 
-    hoje.setHours(0,0,0,0);
-
-    const limite = (corteDias !== null && !isNaN(corteDias))
-        ? new Date(hoje.getTime())
-        : null;
-
-    if(limite) limite.setDate(hoje.getDate() - corteDias);
-
-    const filtered = dfGlobal.filter(l => {
-
-        // ✅ FILTRO POR CLIENTE — FALTAVA AQUI
-        if(clientesSelecionados.length > 0 &&
-           !clientesSelecionados.includes(String(l["Cliente"])))
-            return false;
-
-        // já existia
-        if(filtroAlmox && l["Almoxarifado"] !== filtroAlmox)
-            return false;
-
-        // ----------------------------------------
-        // ⭐ FILTRO POR INTERVALO DE MESES — MESMO BLOCO
-        // ----------------------------------------
-        const mesInicioVal = document.getElementById("filtroMesInicio").value;
-        const mesFimVal    = document.getElementById("filtroMesFim").value;
-
-        let mesInicio = null, mesFim = null;
-
-        if (mesInicioVal) {
-            const [ano, mes] = mesInicioVal.split("-");
-            mesInicio = new Date(Number(ano), Number(mes)-1, 1);
-        }
-        if (mesFimVal) {
-            const [ano, mes] = mesFimVal.split("-");
-            mesFim = new Date(Number(ano), Number(mes), 0);
-        }
-
-        function maiorDataLinha(linha) {
-            const dE = linha["Data de Entrada da Nota"];
-            const dC = linha["Data de Check in"];
-            if (dE instanceof Date && dC instanceof Date) return dE > dC ? dE : dC;
-            if (dE instanceof Date) return dE;
-            if (dC instanceof Date) return dC;
-            return null;
-        }
-
-        if (mesInicio || mesFim) {
-            const md = maiorDataLinha(l);
-            if (!md) return false;
-            if (mesInicio && md < mesInicio) return false;
-            if (mesFim && md > mesFim) return false;
-        }
-
-        // filtro por dias de corte
-        const dEntrada = l["Data de Entrada da Nota"];
-        const dCheckin = l["Data de Check in"];
-
-        if (corteDias !== null && limite) {
-            const maiorData =
-                (dEntrada instanceof Date && !isNaN(dEntrada) &&
-                dCheckin instanceof Date && !isNaN(dCheckin))
-                    ? (dEntrada > dCheckin ? dEntrada : dCheckin)
-                    : (dEntrada instanceof Date && !isNaN(dEntrada) ? dEntrada :
-                    dCheckin instanceof Date && !isNaN(dCheckin) ? dCheckin : null);
-
-            if (!maiorData) return false;
-            return maiorData.getTime() <= limite.getTime();
-        }
-
-        return true;
-    });
-
-    return filtered;
+    return applyFilters(dfGlobal);
 }
-
 
 // Constrói a matriz de contagens: almoxarifado x range
 function buildChartCounts(filteredData){
@@ -846,16 +722,12 @@ let currentChart = null;
 
 // Cria e abre modal + chart + resumo (resumo ficará abaixo do gráfico conforme pedido — opção 2)
 function openChartModalWithSummary(){
-    const filtered = getCurrentFilteredData(); // mantém para segurança
-    // usar exatamente a mesma filtragem da tabela
     const tabelaFiltrada = getCurrentFilteredData();
 
     const { almoxs, ranges, counts } = buildChartCounts(tabelaFiltrada);
     // ⭐ Ajusta largura mínima por quantidade de barras
     const minBarWidth = 60;
     const totalBars = almoxs.length;
-    
-
 
     if(almoxs.length === 0){
         alert("Nenhum dado para exibir no gráfico (verifique filtros).");
@@ -864,7 +736,6 @@ function openChartModalWithSummary(){
 
     // Build summary text structure
     const resumo = buildSummaryText(tabelaFiltrada);
-
 
     // montar modal
     const overlay = document.createElement("div");
@@ -908,10 +779,8 @@ function openChartModalWithSummary(){
 
     document.getElementById("print-resumo-btn").onclick = imprimirResumoGeral;
 
-    // só agora o elemento existe
     document.querySelector("#chart-container").style.minWidth =
         (totalBars * minBarWidth) + "px";
-
 
     // montar datasets com palette
     const palette = {
@@ -977,7 +846,6 @@ function openChartModalWithSummary(){
         Volumes Totais: <strong>${resumo.totalVolumes}</strong>
         &nbsp;|&nbsp; Valor Total: <strong>R$ ${resumo.totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2})}</strong>`;
 
-
     const porAlmoxText = Object.keys(resumo.porAlmox).sort().map(a => {
         const v = resumo.porAlmox[a];
         return `${a} — ${v.notas} notas | ${v.peso.toFixed(2)} kg | ${v.volumes} volumes | Valor Total: R$ ${ (v.valor || 0).toLocaleString('pt-BR',{minimumFractionDigits:2}) }` ;
@@ -987,7 +855,7 @@ function openChartModalWithSummary(){
     const porRangeText = Object.keys(resumo.porRange).map(r => `${r}: ${resumo.porRange[r]} notas`).join("\n");
     document.getElementById("resumo-por-range").innerText = porRangeText || "—";
 
-    // NOVO — preencher resumo por almoxarifado + range
+    // preencher resumo por almoxarifado + range
     let txtAlmoxRange = "";
     const almoxOrdenados = Object.keys(resumo.porAlmoxRange).sort();
 
@@ -1001,8 +869,6 @@ function openChartModalWithSummary(){
     });
 
     document.getElementById("resumo-por-almox-range").textContent = txtAlmoxRange;
-
-    
 
     // evento de fechamento
     document.getElementById("chart-modal-close").onclick = () => closeChartModal();
@@ -1052,13 +918,11 @@ function closeChartModal(){
 
 // ---------------- Mostrar Resumo + abrir popup ----------------
 function mostrarResumoGeral(){
-    // Toggle: se modal já existe, fecha; caso contrário abre
     const existente = document.getElementById("chart-modal-overlay");
     if (existente) {
         closeChartModal();
         return;
     }
-    // abre modal com gráfico e resumo (resumo abaixo do gráfico — opção 2)
     openChartModalWithSummary();
 }
 
@@ -1072,10 +936,44 @@ $(document).ready(function() {
     $('#filtroCliente').on('change', function() {
         renderTabela();
     });
+
+    $('#filtroAlmox').select2({
+        placeholder: "Almoxarifado",
+        allowClear: true,
+        width: 'resolve'
+    });
+
+    $('#filtroAlmox').on('change', function () {
+        renderTabela();
+    });
+
 });
 
 document.getElementById("filtroMesInicio").onchange = renderTabela;
 document.getElementById("filtroMesFim").onchange = renderTabela;
+
+
+document.getElementById("diasCorte").addEventListener("keyup", function(e){
+    if(e.key === "Enter"){ renderTabela(); }
+});
+document.getElementById("diasCorte").addEventListener("change", renderTabela);
+
+// Limpar filtros ao carregar um novo arquivo
+document.getElementById("fileInput").addEventListener("change", function() {
+
+    // Limpa selects Select2
+    $('#filtroCliente').val(null).trigger('change');
+    $('#filtroAlmox').val(null).trigger('change');
+
+    // Limpa inputs simples
+    document.getElementById("diasCorte").value = "";
+    document.getElementById("filtroMesInicio").value = "";
+    document.getElementById("filtroMesFim").value = "";
+
+    // Atualiza a tabela limpa
+    renderTabela();
+});
+
 
 </script>
 </body>
